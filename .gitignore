@@ -22,3 +22,54 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Cursor agent klasörü
+.cursor/
+
+# Supabase client dosyaları
+src/services/supabase.js
+src/lib/supabaseClient.js
+
+# Ortam değişkenleri
+.env
+.env.*
+
+# Supabase config/cache
+.supabase/
+
+# Test coverage
+coverage/
+
+# Build çıktısı
+build/
+dist/
+dist-ssr/
+storybook-static/
+
+# Cypress çıktıları
+cypress/videos/
+cypress/screenshots/
+
+# MacOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# Linux
+*~
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Yedek dosyalar
+*.bak
+
+# Yarn
+.yarn/
+
+# Log dosyaları
+*.log
