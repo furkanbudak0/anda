@@ -10,9 +10,9 @@ Bu test planı, ANDA e-ticaret platformunun MVP seviyesindeki tüm fonksiyonlar�
 
 ### 1.1 Misafir Kullanıcı Deneyimi
 
-- [evet, ama anasayfa carousel'leri popüler ürünler, fırsat ürüleri olarak değiştirilecek. Yeni ürünler için ayrı bir navbar butonu yapılabilir sort için.] **Ana Sayfa Erişimi**: Misafir kullanıcılar ana sayfaya erişebiliyor mu?
-- [Detaylar görüntülenebiliyor ama yorum, sepete ekleme, fav. kısımları düzgün çalışmıyor.] **Ürün Görüntüleme**: Ürün listesi ve detay sayfaları görüntülenebiliyor mu?
-- [Evet gayet güzel çalışıyor ama arama çubuğunun kategorilerin tepesinde büyük yer kaplaması durumu giderilmeli ve küçük bir kategori içinde ara butonuna çevirilebilir ya da navbar içerisinde çalıacak duruma getirilebilir.] **Kategori Filtreleme**: Kategoriler çalışıyor mu?
+- [Evet] **Ana Sayfa Erişimi**: Misafir kullanıcılar ana sayfaya erişebiliyor mu?
+- [Evet] **Ürün Görüntüleme**: Ürün listesi ve detay sayfaları görüntülenebiliyor mu?
+- [Evet gayet güzel çalışıyor ama arama çubuğunun kategorilerin tepesinde büyük yer kaplaması durumu giderilmeli ve küçük bir kategori içinde ara butonuna çevirilebilir ya da navbar içerisinde çalışacak duruma getirilebilir.] **Kategori Filtreleme**: Kategoriler çalışıyor mu?
 - [Evet gayet yeterli çalışıyor. Ürün bulunamadı yazarken mor buton çıkıyor onu turuncu yapalım yazıları da mavi'den siyah tonlarına çekelim.] **Arama Fonksiyonu**: Ürün arama çalışıyor mu?
 
 ### 1.2 Kullanıcı Kaydı
@@ -20,14 +20,14 @@ Bu test planı, ANDA e-ticaret platformunun MVP seviyesindeki tüm fonksiyonlar�
 - [Evet] **Kayıt Formu**: Yeni kullanıcı kaydı formu açılıyor mu?
 - [Evet] **Form Validasyonu**: Gerekli alanlar kontrol ediliyor mu?
 - [Evet] **Kayıt İşlemi**: Kayıt başarılı oluyor mu?
-- [Henüz Aktif edilmedi] **E-posta Doğrulama**: E-posta doğrulama süreci çalışıyor mu?
+- [Evet, Henüz Aktif edilmedi] **E-posta Doğrulama**: E-posta doğrulama süreci çalışıyor mu?
 
 ### 1.3 Kullanıcı Girişi
 
 - [Evet] **Giriş Formu**: Giriş formu açılıyor mu?
-- [Evet, İnvalid login credientials yazıyor onu türkçeleştircez.] **Hatalı Giriş**: Yanlış bilgilerle giriş hata veriyor mu?
+- [Evet, İnvalid login credientials yazıyor onları türkçeleştirelim.] **Hatalı Giriş**: Yanlış bilgilerle giriş hata veriyor mu?
 - [Evet] **Başarılı Giriş**: Doğru bilgilerle giriş yapılabiliyor mu?
-- [Müşteri için ve seller için butonu yapılmamış ama hatırlama otomatik olarak var gibi] **Oturum Hatırlama**: "Beni hatırla" seçeneği çalışıyor mu?
+- [Müşteri için ve seller için butonu yapılmamış ama hatırlama otomatik olarak mevcut] **Oturum Hatırlama**: "Beni hatırla" seçeneği çalışıyor mu?
 
 ### 1.4 Şifre İşlemleri
 
@@ -51,15 +51,15 @@ Bu test planı, ANDA e-ticaret platformunun MVP seviyesindeki tüm fonksiyonlar�
 - [alt kategori bazlı olarak çalışıyor] **Kategori Filtreleme**: Kategori bazlı filtreleme çalışıyor mu?
 - [böyle bir özellik yok] **Fiyat Filtreleme**: Fiyat aralığı filtreleme çalışıyor mu?
 - [evet] **Sıralama**: Fiyat, popülerlik, tarih sıralaması çalışıyor mu?
-- [az demo veriden dolayı test edilemedi] **Sayfalama**: Sayfalama veya sonsuz kaydırma çalışıyor mu?
+- [eksik demo veriden dolayı test edilemedi] **Sayfalama**: Sayfalama veya sonsuz kaydırma çalışıyor mu?
 
 ### 2.3 Ürün Detay Sayfası
 
 - [evet] **Ürün Bilgileri**: Ürün adı, fiyat, açıklama görüntüleniyor mu?
 - [demo verilerin yüklenemiyor ama sebebi imagelerin linkleriyle ilgili olabilir] **Ürün Resimleri**: Ürün resimleri yükleniyor mu?
 - [hayır burada problem var] **Satıcı Bilgileri**: Satıcı bilgileri gösteriliyor mu?
-- [] **Stok Durumu**: Stok durumu kontrol ediliyor mu?
-- [ ] **Adet Seçimi**: Adet seçimi çalışıyor mu?
+- [evet] **Stok Durumu**: Stok durumu kontrol ediliyor mu?
+- [evet] **Adet Seçimi**: Adet seçimi çalışıyor mu?
 
 ### 2.4 Arama
 
@@ -73,18 +73,18 @@ Bu test planı, ANDA e-ticaret platformunun MVP seviyesindeki tüm fonksiyonlar�
 
 ### 3.1 Sepete Ekleme
 
-- [ ] **Ürün Ekleme**: "Sepete Ekle" butonu çalışıyor mu?
-- [ ] **Adet Kontrolü**: Stok kontrolü yapılıyor mu?
-- [ ] **Sepet Güncelleme**: Sepet sayısı güncelleniyor mu?
-- [ ] **Bildirim**: Sepete eklendi bildirimi gösteriliyor mu?
+- [evet] **Ürün Ekleme**: "Sepete Ekle" butonu çalışıyor mu?
+- [kontrol edilmedi] **Adet Kontrolü**: Stok kontrolü yapılıyor mu?
+- [evet] **Sepet Güncelleme**: Sepet sayısı güncelleniyor mu?
+- [hayır] **Bildirim**: Sepete eklendi bildirimi gösteriliyor mu?
 
 ### 3.2 Sepet Yönetimi
 
-- [ ] **Sepet Görüntüleme**: Sepet sayfası açılıyor mu?
-- [ ] **Adet Değiştirme**: Ürün adedi değiştirilebiliyor mu?
-- [ ] **Ürün Silme**: Sepetten ürün silinebiliyor mu?
-- [ ] **Sepet Temizleme**: Sepet tamamen temizlenebiliyor mu?
-- [ ] **Toplam Hesaplama**: Toplam fiyat doğru hesaplanıyor mu?
+- [evet] **Sepet Görüntüleme**: Sepet sayfası açılıyor mu?
+- [evet] **Adet Değiştirme**: Ürün adedi değiştirilebiliyor mu?
+- [evet] **Ürün Silme**: Sepetten ürün silinebiliyor mu?
+- [evet] **Sepet Temizleme**: Sepet tamamen temizlenebiliyor mu?
+- [evet] **Toplam Hesaplama**: Toplam fiyat doğru hesaplanıyor mu?
 
 ---
 
@@ -92,15 +92,15 @@ Bu test planı, ANDA e-ticaret platformunun MVP seviyesindeki tüm fonksiyonlar�
 
 ### 4.1 Favori Ekleme/Çıkarma
 
-- [ ] **Favori Ekleme**: Kalp ikonuna tıklayınca favori ekleniyor mu?
-- [ ] **Favori Çıkarma**: Favori ürün çıkarılabiliyor mu?
-- [ ] **Durum Güncelleme**: Favori durumu anlık güncelleniyor mu?
+- [evet] **Favori Ekleme**: Kalp ikonuna tıklayınca favori ekleniyor mu?
+- [evet] **Favori Çıkarma**: Favori ürün çıkarılabiliyor mu?
+- [tercihen anlık güncellenmiyor.] **Durum Güncelleme**: Favori durumu anlık güncelleniyor mu?
 
 ### 4.2 Favori Listesi
 
-- [ ] **Favori Sayfası**: Favori ürünler sayfası açılıyor mu?
-- [ ] **Favori Listesi**: Favori ürünler listeleniyor mu?
-- [ ] **Favori Silme**: Favori sayfasından ürün silinebiliyor mu?
+- [evet] **Favori Sayfası**: Favori ürünler sayfası açılıyor mu?
+- [evet] **Favori Listesi**: Favori ürünler listeleniyor mu?
+- [evet] **Favori Silme**: Favori sayfasından ürün silinebiliyor mu?
 
 ---
 
@@ -108,22 +108,22 @@ Bu test planı, ANDA e-ticaret platformunun MVP seviyesindeki tüm fonksiyonlar�
 
 ### 5.1 Ödeme Sayfası
 
-- [ ] **Ödeme Sayfası**: Sepetten ödeme sayfasına geçiş çalışıyor mu?
-- [ ] **Adres Seçimi**: Teslimat adresi seçilebiliyor mu?
-- [ ] **Adres Ekleme**: Yeni adres eklenebiliyor mu?
-- [ ] **Ödeme Yöntemi**: Ödeme yöntemi seçilebiliyor mu?
+- [evet] **Ödeme Sayfası**: Sepetten ödeme sayfasına geçiş çalışıyor mu?
+- [evet] **Adres Seçimi**: Teslimat adresi seçilebiliyor mu?
+- [evet] **Adres Ekleme**: Yeni adres eklenebiliyor mu?
+- [evet] **Ödeme Yöntemi**: Ödeme yöntemi seçilebiliyor mu?
 
 ### 5.2 Sipariş Onayı
 
-- [ ] **Sipariş Özeti**: Sipariş özeti doğru gösteriliyor mu?
-- [ ] **Fiyat Hesaplama**: Toplam, kargo, vergi hesaplaması doğru mu?
-- [ ] **Sipariş Onayı**: Sipariş onaylanabiliyor mu?
+- [evet] **Sipariş Özeti**: Sipariş özeti doğru gösteriliyor mu?
+- [evet] **Fiyat Hesaplama**: Toplam, kargo, vergi hesaplaması doğru mu?
+- [evet] **Sipariş Onayı**: Sipariş onaylanabiliyor mu?
 
 ### 5.3 Sipariş Takibi
 
-- [ ] **Sipariş Listesi**: Kullanıcı siparişlerini görebiliyor mu?
-- [ ] **Sipariş Detayı**: Sipariş detayları görüntülenebiliyor mu?
-- [ ] **Sipariş Durumu**: Sipariş durumu güncelleniyor mu?
+- [üzerinde çalışıyor] **Sipariş Listesi**: Kullanıcı siparişlerini görebiliyor mu?
+- [üzerinde çalışıyor] **Sipariş Detayı**: Sipariş detayları görüntülenebiliyor mu?
+- [üzerinde çalışıyor] **Sipariş Durumu**: Sipariş durumu güncelleniyor mu?
 
 ---
 
@@ -137,11 +137,11 @@ Bu test planı, ANDA e-ticaret platformunun MVP seviyesindeki tüm fonksiyonlar�
 
 ### 6.2 Adres Yönetimi
 
-- [ ] **Adres Listesi**: Kayıtlı adresler listeleniyor mu?
-- [ ] **Adres Ekleme**: Yeni adres eklenebiliyor mu?
-- [ ] **Adres Düzenleme**: Mevcut adres düzenlenebiliyor mu?
-- [ ] **Adres Silme**: Adres silinebiliyor mu?
-- [ ] **Varsayılan Adres**: Varsayılan adres ayarlanabiliyor mu?
+- [evet] **Adres Listesi**: Kayıtlı adresler listeleniyor mu?
+- [evet] **Adres Ekleme**: Yeni adres eklenebiliyor mu?
+- [evet] **Adres Düzenleme**: Mevcut adres düzenlenebiliyor mu?
+- [evet] **Adres Silme**: Adres silinebiliyor mu?
+- [evet] **Varsayılan Adres**: Varsayılan adres ayarlanabiliyor mu?
 
 ### 6.3 Hesap Ayarları
 
