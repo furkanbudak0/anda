@@ -66,7 +66,7 @@ import AdminCouponManagement from "./pages/admin/AdminCouponManagement";
 import AdminMessagesSystem from "./pages/admin/AdminMessagesSystem";
 import AdminSettingsPanel from "./pages/admin/AdminSettingsPanel";
 import AdminSiteContent from "./pages/admin/AdminSiteContent";
-import AdminSystemHealth from "./pages/admin/AdminSystemHealth";
+
 import AdminSellerAgreements from "./pages/admin/AdminSellerAgreements";
 import AdminFeaturePlaceholder from "./pages/admin/AdminFeaturePlaceholder";
 
@@ -457,16 +457,7 @@ function App() {
                       </ProtectedRoute>
                     }
                   />
-                  <Route
-                    path="/admin/system"
-                    element={
-                      <ProtectedRoute>
-                        <RoleGuard allowedRoles={["admin"]}>
-                          <AdminSystemHealth />
-                        </RoleGuard>
-                      </ProtectedRoute>
-                    }
-                  />
+
                   <Route
                     path="/admin/agreements"
                     element={

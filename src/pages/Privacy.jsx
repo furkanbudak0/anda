@@ -1,4 +1,3 @@
-// NavBar kaldırıldı - App.jsx'te zaten var
 import { Link } from "react-router-dom";
 import {
   ShieldCheckIcon,
@@ -27,7 +26,7 @@ export default function Privacy() {
               koruduğumuz hakkında detaylı bilgi
             </p>
             <p className="text-sm text-gray-500 mt-4">
-              Son güncelleme: 15 Aralık 2024
+              Son güncelleme: 24.07.2025
             </p>
           </div>
 

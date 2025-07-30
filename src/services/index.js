@@ -88,5 +88,5 @@ export const serviceInfo = {
   version: "1.0.0",
   description: "ANDA E-Commerce Service Layer",
   services: Object.keys(services),
-  lastUpdated: "2024-12-01",
+  lastUpdated: "2025-07-25",
 };

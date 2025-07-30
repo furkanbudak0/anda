@@ -23,7 +23,7 @@ export default function Terms() {
                 ANDA platformunu kullanarak bu şartları kabul etmiş olursunuz
               </p>
               <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-                Son güncellenme: 15 Mart 2024
+                Son güncellenme: 24.07.2025
               </div>
             </div>
 

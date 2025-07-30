@@ -187,7 +187,6 @@ export { useAuth as useAuthHook } from "../hooks/useAuth";
 export { useErrorHandling } from "../hooks/useErrorHandling";
 export { useMutation as useEnhancedMutation } from "../hooks/useMutation";
 export { useLoading } from "../hooks/useLoading";
-export * from "../hooks/useEffects";
 
 // UI Components
 export {
