@@ -12,7 +12,6 @@ export {
   ConfirmationModal,
   FormModal,
 } from "./Modal";
-export { default as Input } from "./Input";
 
 // Re-export commonly used components for easy access
 export { default as Spinner } from "../Spinner";

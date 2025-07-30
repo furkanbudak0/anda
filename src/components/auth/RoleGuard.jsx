@@ -1,5 +1,6 @@
 /* eslint-disable react/prop-types */
 import { useAuth } from "../../contexts/AuthContext";
+import Spinner from "../Spinner";
 
 /**
  * Role-based conditional rendering component
@@ -7,7 +8,7 @@ import { useAuth } from "../../contexts/AuthContext";
  */
 export default function RoleGuard({
   children,
-  role = null,
+  role: requiredRole = null,
   roles = [],
   permission = null,
   permissions = [],
@@ -16,11 +17,24 @@ export default function RoleGuard({
   inverse = false,
 }) {
   const {
-    role: userRole,
     hasPermission,
     hasRoleLevel,
     isAuthenticated,
+    isLoading,
+    role: userRole,
   } = useAuth();
+
+  // If auth is loading or userRole is not yet determined, show spinner
+  if (isLoading || (!isAuthenticated && userRole === null)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-purple-100">
+        <Spinner />
+        <p className="mt-4 text-purple-600 font-medium">
+          Yetki kontrol ediliyor...
+        </p>
+      </div>
+    );
+  }
 
   // If not authenticated, don't render anything (unless inverse is true)
   if (!isAuthenticated) {
@@ -30,7 +44,7 @@ export default function RoleGuard({
   let hasAccess = true;
 
   // Check single role requirement
-  if (role && !hasRoleLevel(role)) {
+  if (requiredRole && !hasRoleLevel(requiredRole)) {
     hasAccess = false;
   }
 

@@ -1,219 +1,92 @@
 import { useState } from "react";
-import { BoltIcon, SparklesIcon } from "@heroicons/react/24/outline";
-import { useExpressCheckout } from "../hooks/useExpressCheckout";
+import { useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
+import { BoltIcon } from "@heroicons/react/24/outline";
 import { useAuth } from "../contexts/AuthContext";
-import toast from "react-hot-toast";
+import { toast } from "react-hot-toast";
+import { notifications } from "../utils/notifications";
+import PropTypes from "prop-types";
 
-/**
- * Express Checkout Button Component
- * Tek tıkla satın alma butonu
- */
-export default function ExpressCheckoutButton({
-  product,
-  variant = null,
-  quantity = 1,
-  className = "",
-  size = "md",
-  showIcon = true,
-}) {
-  const [isProcessing, setIsProcessing] = useState(false);
-  const { isAuthenticated } = useAuth();
-  const {
-    expressCheckout,
-    checkExpressEligibility,
-    defaultOptions,
-    optionsLoading,
-  } = useExpressCheckout();
-
-  const sizeClasses = {
-    sm: "px-3 py-2 text-sm",
-    md: "px-4 py-2.5 text-sm",
-    lg: "px-6 py-3 text-base",
-    xl: "px-8 py-4 text-lg",
-  };
+export default function ExpressCheckoutButton({ product, quantity, variant }) {
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { user } = useAuth();
 
   const handleExpressCheckout = async () => {
-    if (!isAuthenticated) {
-      toast.error("Hızlı satın alma için giriş yapmalısınız");
+    if (!user) {
+      toast.error("Hızlı ödeme için giriş yapmanız gerekiyor");
+      navigate("/login", { state: { from: `/product/${product?.uuid}` } });
       return;
     }
 
-    setIsProcessing(true);
+    if (!product) {
+      toast.error("Ürün bilgisi bulunamadı");
+      return;
+    }
+
+    if ((product.stock ?? 0) < quantity) {
+      toast.error("Yeterli stok bulunmuyor");
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
-      // Önce uygunluk kontrolü yap
-      const eligibility = await checkExpressEligibility(product.id, quantity);
-
-      if (!eligibility.isEligible) {
-        throw new Error(eligibility.reason);
-      }
-
-      // Express checkout başlat
-      const result = await expressCheckout.mutateAsync({
-        productId: product.id,
-        variantId: variant?.id,
-        quantity,
-        useDefaults: true,
+      // Direkt checkout sayfasına yönlendir (sepete eklemeden)
+      navigate("/checkout", {
+        state: {
+          expressCheckout: true,
+          productId: product.uuid,
+          quantity: quantity,
+          variant: variant,
+        },
       });
 
-      toast.success("Siparişiniz başarıyla oluşturuldu!");
-
-      // Success sayfasına yönlendir
-      window.location.href = `/order-success/${result.order.id}?express=true`;
+      notifications.success("Hızlı ödeme sayfasına yönlendiriliyorsunuz");
     } catch (error) {
       console.error("Express checkout error:", error);
-
-      if (error.message === "LOGIN_REQUIRED") {
-        toast.error("Satın alma için giriş yapmalısınız");
-      } else if (error.message === "SETUP_REQUIRED") {
-        toast.error("Varsayılan adres ve ödeme yöntemi ayarlamanız gerekiyor");
-        // Setup sayfasına yönlendir
-        window.location.href = "/account/payment-methods";
-      } else {
-        toast.error(error.message || "Bir hata oluştu");
-      }
+      toast.error("Hızlı ödeme işlemi başarısız oldu");
     } finally {
-      setIsProcessing(false);
+      setIsLoading(false);
     }
   };
 
-  // Kullanıcı giriş yapmamışsa veya varsayılan bilgiler eksikse
-  if (!isAuthenticated) {
-    return (
-      <button
-        onClick={() => toast.error("Hızlı satın alma için giriş yapmalısınız")}
-        className={`
-          inline-flex items-center justify-center gap-2 font-medium
-          rounded-lg border transition-all duration-200
-          bg-gradient-to-r from-purple-600 to-indigo-600 
-          text-white border-transparent
-          hover:from-purple-700 hover:to-indigo-700
-          hover:shadow-lg hover:scale-105
-          ${sizeClasses[size]} ${className}
-        `}
-      >
-        {showIcon && <BoltIcon className="w-4 h-4" />}
-        Hızlı Satın Al
-      </button>
-    );
-  }
+  const isDisabled =
+    !product || isLoading || !product.stock || product.stock < quantity;
 
-  // Loading state
-  if (optionsLoading) {
-    return (
-      <button
-        disabled
-        className={`
-          inline-flex items-center justify-center gap-2 font-medium
-          rounded-lg border transition-all duration-200
-          bg-gray-300 text-gray-500 border-gray-300
-          cursor-not-allowed
-          ${sizeClasses[size]} ${className}
-        `}
-      >
-        <div className="w-4 h-4 animate-spin rounded-full border-2 border-gray-400 border-t-transparent" />
-        Yükleniyor...
-      </button>
-    );
-  }
-
-  // Ana buton
   return (
-    <button
+    <motion.button
       onClick={handleExpressCheckout}
-      disabled={isProcessing || !product?.is_active}
+      disabled={isDisabled}
       className={`
-        inline-flex items-center justify-center gap-2 font-medium
-        rounded-lg border transition-all duration-200 relative overflow-hidden
+        w-full flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-semibold text-white
+        transition-all duration-200 transform hover:scale-[1.02] active:scale-[0.98]
         ${
-          isProcessing || !product?.is_active
-            ? "bg-gray-300 text-gray-500 border-gray-300 cursor-not-allowed"
-            : `bg-gradient-to-r from-purple-600 to-indigo-600 
-               text-white border-transparent
-               hover:from-purple-700 hover:to-indigo-700
-               hover:shadow-lg hover:scale-105 active:scale-95
-               focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2`
+          isDisabled
+            ? "bg-gray-400 cursor-not-allowed"
+            : "bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 shadow-lg hover:shadow-xl"
         }
-        ${sizeClasses[size]} ${className}
       `}
+      whileHover={!isDisabled ? { scale: 1.02 } : {}}
+      whileTap={!isDisabled ? { scale: 0.98 } : {}}
     >
-      {/* Shimmer effect */}
-      {!isProcessing && product?.is_active && (
-        <div className="absolute inset-0 -top-[1px] -bottom-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] animate-shimmer" />
+      {isLoading ? (
+        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+      ) : (
+        <BoltIcon className="w-5 h-5" />
       )}
-
-      {/* Icon */}
-      {showIcon && (
-        <div className="relative">
-          {isProcessing ? (
-            <div className="w-4 h-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-          ) : (
-            <SparklesIcon className="w-4 h-4" />
-          )}
-        </div>
-      )}
-
-      {/* Text */}
-      <span className="relative">
-        {isProcessing ? "İşleniyor..." : "Hızlı Satın Al"}
+      <span>
+        {isLoading ? "İşleniyor..." : isDisabled ? "Stokta Yok" : "Hızlı Ödeme"}
       </span>
-    </button>
+    </motion.button>
   );
 }
 
-/**
- * Express Checkout Info Badge
- * Hızlı satın alma bilgi kartı
- */
-export function ExpressCheckoutInfo({ className = "" }) {
-  return (
-    <div
-      className={`bg-purple-50 border border-purple-200 rounded-lg p-4 ${className}`}
-    >
-      <div className="flex items-start gap-3">
-        <BoltIcon className="w-5 h-5 text-purple-600 mt-0.5 flex-shrink-0" />
-        <div>
-          <h4 className="text-sm font-medium text-purple-900 mb-1">
-            Hızlı Satın Al
-          </h4>
-          <p className="text-xs text-purple-700">
-            Varsayılan adres ve ödeme yönteminizle tek tıkla satın alın
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Express Checkout Setup Prompt
- * Kurulum gereken durumlarda gösterilir
- */
-export function ExpressCheckoutSetup({ onSetup, className = "" }) {
-  return (
-    <div
-      className={`bg-amber-50 border border-amber-200 rounded-lg p-4 ${className}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <BoltIcon className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
-          <div>
-            <h4 className="text-sm font-medium text-amber-900 mb-1">
-              Hızlı Satın Al'ı Aktifleştir
-            </h4>
-            <p className="text-xs text-amber-700 mb-2">
-              Varsayılan adres ve ödeme yöntemi ayarlayarak tek tıkla alışveriş
-              yapın
-            </p>
-          </div>
-        </div>
-        <button
-          onClick={onSetup}
-          className="text-xs bg-amber-600 text-white px-3 py-1 rounded-md hover:bg-amber-700 transition-colors flex-shrink-0"
-        >
-          Ayarla
-        </button>
-      </div>
-    </div>
-  );
-}
+ExpressCheckoutButton.propTypes = {
+  product: PropTypes.shape({
+    uuid: PropTypes.string,
+    stock: PropTypes.number,
+  }),
+  quantity: PropTypes.number,
+  variant: PropTypes.object,
+};

@@ -1,4 +1,5 @@
-import React from "react";
+// Bu hook, merkezi supabase client ile çalışır. import { supabase } from '../services/supabase' kullanılır.
+import React, { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../services/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -10,12 +11,19 @@ import toast from "react-hot-toast";
 export function useTrackInteraction() {
   return useMutation({
     mutationFn: async ({
-      productId,
+      productUuid,
       interactionType,
       variantId = null,
       quantity = 1,
       price = null,
     }) => {
+      if (
+        !productUuid ||
+        typeof productUuid !== "string" ||
+        productUuid.length !== 36
+      ) {
+        throw new Error("Event için geçerli bir ürün uuid'si gereklidir.");
+      }
       // Get session info
       const sessionId =
         sessionStorage.getItem("session_id") || "guest_" + Date.now();
@@ -24,7 +32,7 @@ export function useTrackInteraction() {
       const { data, error } = await supabase
         .from("product_interactions")
         .insert({
-          product_id: productId,
+          product_id: productUuid,
           interaction_type: interactionType,
           variant_id: variantId,
           quantity,
@@ -78,11 +86,16 @@ export function useSellerAnalytics(period = "daily", days = 30) {
 /**
  * Hook for product analytics (individual product stats)
  */
-export function useProductAnalytics(productId, days = 30) {
+export function useProductAnalytics(productUuid, days = 30) {
   return useQuery({
-    queryKey: ["product-analytics", productId, days],
+    queryKey: ["product-analytics", productUuid, days],
     queryFn: async () => {
-      if (!productId) return null;
+      if (
+        !productUuid ||
+        typeof productUuid !== "string" ||
+        productUuid.length !== 36
+      )
+        return null;
 
       const endDate = new Date();
       const startDate = new Date();
@@ -91,7 +104,7 @@ export function useProductAnalytics(productId, days = 30) {
       const { data, error } = await supabase
         .from("product_analytics")
         .select("*")
-        .eq("product_id", productId)
+        .eq("product_id", productUuid)
         .gte("date", startDate.toISOString().split("T")[0])
         .lte("date", endDate.toISOString().split("T")[0])
         .order("date", { ascending: true });
@@ -99,7 +112,7 @@ export function useProductAnalytics(productId, days = 30) {
       if (error) throw new Error(error.message);
       return data || [];
     },
-    enabled: !!productId,
+    enabled: !!productUuid,
   });
 }
 
@@ -126,191 +139,6 @@ export function useSellerAnalyticsSummary(periodType = "monthly") {
       return data || [];
     },
     enabled: !!user?.seller_id,
-  });
-}
-
-/**
- * Hook for inventory movements
- */
-export function useInventoryMovements(productId = null) {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["inventory-movements", user?.id, productId],
-    queryFn: async () => {
-      if (!user?.seller_id) return [];
-
-      let query = supabase
-        .from("inventory_movements")
-        .select(
-          `
-          *,
-          product:products(name, sku),
-          variant:product_variants(title)
-        `
-        )
-        .eq("seller_id", user.seller_id)
-        .order("created_at", { ascending: false });
-
-      if (productId) {
-        query = query.eq("product_id", productId);
-      }
-
-      const { data, error } = await query.limit(100);
-
-      if (error) throw new Error(error.message);
-      return data || [];
-    },
-    enabled: !!user?.seller_id,
-  });
-}
-
-/**
- * Hook for stock alerts
- */
-export function useStockAlerts() {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["stock-alerts", user?.id],
-    queryFn: async () => {
-      if (!user?.seller_id) return [];
-
-      const { data, error } = await supabase
-        .from("stock_alerts")
-        .select(
-          `
-          *,
-          product:products(name, sku, image_url),
-          variant:product_variants(title)
-        `
-        )
-        .eq("seller_id", user.seller_id)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
-
-      if (error) throw new Error(error.message);
-      return data || [];
-    },
-    enabled: !!user?.seller_id,
-  });
-}
-
-/**
- * Hook for acknowledging stock alerts
- */
-export function useAcknowledgeStockAlert() {
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-
-  return useMutation({
-    mutationFn: async (alertId) => {
-      const { data, error } = await supabase
-        .from("stock_alerts")
-        .update({
-          is_active: false,
-          acknowledged_at: new Date().toISOString(),
-          acknowledged_by: user.id,
-        })
-        .eq("id", alertId)
-        .select()
-        .single();
-
-      if (error) throw new Error(error.message);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["stock-alerts"]);
-      toast.success("Stok uyarısı onaylandı");
-    },
-    onError: (error) => {
-      toast.error(`Hata: ${error.message}`);
-    },
-  });
-}
-
-/**
- * Hook for creating inventory movements (manual adjustments)
- */
-export function useCreateInventoryMovement() {
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
-
-  return useMutation({
-    mutationFn: async ({
-      productId,
-      variantId,
-      movementType,
-      quantityChange,
-      reason,
-      referenceNumber,
-    }) => {
-      // Get current quantity
-      let currentQuantity = 0;
-      if (variantId) {
-        const { data: variant } = await supabase
-          .from("product_variants")
-          .select("quantity")
-          .eq("id", variantId)
-          .single();
-        currentQuantity = variant?.quantity || 0;
-      } else {
-        const { data: product } = await supabase
-          .from("products")
-          .select("quantity")
-          .eq("id", productId)
-          .single();
-        currentQuantity = product?.quantity || 0;
-      }
-
-      const newQuantity = currentQuantity + quantityChange;
-
-      // Create movement record
-      const { data: movement, error: movementError } = await supabase
-        .from("inventory_movements")
-        .insert({
-          product_id: productId,
-          variant_id: variantId,
-          seller_id: user.seller_id,
-          movement_type: movementType,
-          quantity_change: quantityChange,
-          quantity_before: currentQuantity,
-          quantity_after: newQuantity,
-          reason,
-          reference_number: referenceNumber,
-          created_by: user.id,
-        })
-        .select()
-        .single();
-
-      if (movementError) throw new Error(movementError.message);
-
-      // Update actual inventory
-      if (variantId) {
-        const { error: updateError } = await supabase
-          .from("product_variants")
-          .update({ quantity: newQuantity })
-          .eq("id", variantId);
-        if (updateError) throw new Error(updateError.message);
-      } else {
-        const { error: updateError } = await supabase
-          .from("products")
-          .update({ quantity: newQuantity })
-          .eq("id", productId);
-        if (updateError) throw new Error(updateError.message);
-      }
-
-      return movement;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["inventory-movements"]);
-      queryClient.invalidateQueries(["seller-products"]);
-      queryClient.invalidateQueries(["stock-alerts"]);
-      toast.success("Stok hareketi başarıyla kaydedildi");
-    },
-    onError: (error) => {
-      toast.error(`Hata: ${error.message}`);
-    },
   });
 }
 
@@ -442,18 +270,18 @@ export function useAdminAnalytics(period = "daily", days = 30) {
 /**
  * Helper hook to track page views automatically
  */
-export function useTrackPageView(productId) {
+export function useTrackPageView(productUuid) {
   const trackInteraction = useTrackInteraction();
 
   // Track page view when component mounts
   React.useEffect(() => {
-    if (productId) {
+    if (productUuid) {
       trackInteraction.mutate({
-        productId,
+        productUuid,
         interactionType: "view",
       });
     }
-  }, [productId]);
+  }, [productUuid]);
 }
 
 /**
@@ -604,125 +432,25 @@ export function useAlgorithmProducts(filters = {}) {
 }
 
 /**
- * Hook for fetching algorithm-based seller recommendations
- */
-export function useAlgorithmSellers(filters = {}) {
-  return useQuery({
-    queryKey: ["algorithm-sellers", filters],
-    queryFn: async () => {
-      let query = supabase
-        .from("sellers")
-        .select(
-          `
-          id,
-          business_name,
-          business_type,
-          description,
-          avatar_url,
-          verified,
-          created_at,
-          rating,
-          total_reviews,
-          total_sales,
-          completion_rate,
-          response_time,
-          store_location,
-          show_location_public,
-          show_ratings_public,
-          follower_count:seller_followers(count),
-          product_count:products(count),
-          algorithm_score:seller_algorithm_scores(
-            total_score,
-            sales_performance_score,
-            customer_satisfaction_score,
-            interaction_score,
-            reliability_score,
-            growth_score,
-            admin_boost,
-            calculated_at
-          )
-        `
-        )
-        .eq("is_active", true)
-        .eq("status", "approved");
-
-      // Apply location filter
-      if (filters.location) {
-        query = query.not("store_location", "is", null);
-        query = query.eq("show_location_public", true);
-      }
-
-      // Apply rating filter
-      if (filters.minRating) {
-        query = query.gte("rating", filters.minRating);
-      }
-
-      // Apply verification filter
-      if (filters.verified) {
-        query = query.eq("verified", true);
-      }
-
-      // Apply sorting
-      switch (filters.sortBy) {
-        case "algorithm":
-          query = query.order("algorithm_score.total_score", {
-            ascending: false,
-          });
-          break;
-        case "sales":
-          query = query.order("total_sales", { ascending: false });
-          break;
-        case "rating":
-          query = query.order("rating", { ascending: false });
-          break;
-        case "followers":
-          query = query.order("follower_count", { ascending: false });
-          break;
-        case "newest":
-          query = query.order("created_at", { ascending: false });
-          break;
-        default:
-          query = query.order("algorithm_score.total_score", {
-            ascending: false,
-          });
-      }
-
-      const limit = filters.limit || 12;
-      query = query.limit(limit);
-
-      const { data, error } = await query;
-
-      if (error) {
-        console.error("Algorithm sellers fetch error:", error);
-        throw new Error("Satıcılar yüklenemedi");
-      }
-
-      return (
-        data?.map((seller) => ({
-          ...seller,
-          final_algorithm_score: calculateFinalSellerScore(seller),
-        })) || []
-      );
-    },
-    staleTime: 10 * 60 * 1000, // 10 minutes
-    cacheTime: 20 * 60 * 1000, // 20 minutes
-  });
-}
-
-/**
  * Hook for recording user interactions (for algorithm)
  */
 export function useRecordInteraction() {
   const { user } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ type, productId, sellerId, metadata = {} }) => {
+    mutationFn: async ({ type, productUuid, sellerId, metadata = {} }) => {
       if (!user?.id) return; // Anonymous interactions not recorded
+      if (
+        !productUuid ||
+        typeof productUuid !== "string" ||
+        productUuid.length !== 36
+      )
+        return;
 
       const interactionData = {
         user_id: user.id,
         interaction_type: type, // 'view', 'cart_add', 'favorite', 'purchase', 'review'
-        product_id: productId || null,
+        product_id: productUuid,
         seller_id: sellerId || null,
         metadata: metadata,
         created_at: new Date().toISOString(),
@@ -739,9 +467,9 @@ export function useRecordInteraction() {
       }
 
       // Trigger algorithm score recalculation
-      if (productId) {
+      if (productUuid) {
         await supabase.rpc("calculate_product_algorithm_score", {
-          product_uuid: productId,
+          product_uuid: productUuid,
         });
       }
 
@@ -751,159 +479,6 @@ export function useRecordInteraction() {
         });
       }
     },
-  });
-}
-
-/**
- * Hook for admin algorithm boost/penalty management
- */
-export function useAlgorithmBoost() {
-  const queryClient = useQueryClient();
-
-  const boostProduct = useMutation({
-    mutationFn: async ({ productId, boostValue, reason, duration }) => {
-      // Update product algorithm score with admin boost
-      const { error } = await supabase.from("product_algorithm_scores").upsert({
-        product_id: productId,
-        admin_boost: boostValue,
-        admin_boost_reason: reason,
-        admin_boost_expires_at: duration
-          ? new Date(Date.now() + duration * 24 * 60 * 60 * 1000).toISOString()
-          : null,
-        updated_at: new Date().toISOString(),
-      });
-
-      if (error) {
-        throw new Error("Ürün algoritma puanı güncellenemedi");
-      }
-
-      // Recalculate total score
-      await supabase.rpc("calculate_product_algorithm_score", {
-        product_uuid: productId,
-      });
-
-      return { success: true };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["algorithm-products"]);
-      toast.success("Ürün algoritma puanı güncellendi!");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Algoritma puanı güncellenemedi");
-    },
-  });
-
-  const boostSeller = useMutation({
-    mutationFn: async ({ sellerId, boostValue, reason, duration }) => {
-      const { error } = await supabase.from("seller_algorithm_scores").upsert({
-        seller_id: sellerId,
-        admin_boost: boostValue,
-        admin_boost_reason: reason,
-        admin_boost_expires_at: duration
-          ? new Date(Date.now() + duration * 24 * 60 * 60 * 1000).toISOString()
-          : null,
-        updated_at: new Date().toISOString(),
-      });
-
-      if (error) {
-        throw new Error("Satıcı algoritma puanı güncellenemedi");
-      }
-
-      await supabase.rpc("calculate_seller_algorithm_score", {
-        seller_uuid: sellerId,
-      });
-
-      return { success: true };
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["algorithm-sellers"]);
-      toast.success("Satıcı algoritma puanı güncellendi!");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Algoritma puanı güncellenemedi");
-    },
-  });
-
-  return {
-    boostProduct,
-    boostSeller,
-  };
-}
-
-/**
- * Hook for fetching trending products (algorithm-based)
- */
-export function useTrendingProducts(timeframe = "week") {
-  return useQuery({
-    queryKey: ["trending-products", timeframe],
-    queryFn: async () => {
-      // Calculate trending based on recent interactions and sales
-      const daysBack = timeframe === "day" ? 1 : timeframe === "week" ? 7 : 30;
-      const startDate = new Date(
-        Date.now() - daysBack * 24 * 60 * 60 * 1000
-      ).toISOString();
-
-      const { data, error } = await supabase.rpc("get_trending_products", {
-        start_date: startDate,
-        limit_count: 20,
-      });
-
-      if (error) {
-        console.error("Trending products fetch error:", error);
-        throw new Error("Trend ürünler yüklenemedi");
-      }
-
-      return data || [];
-    },
-    staleTime: 15 * 60 * 1000, // 15 minutes
-    cacheTime: 30 * 60 * 1000, // 30 minutes
-  });
-}
-
-/**
- * Hook for personalized recommendations
- */
-export function usePersonalizedRecommendations() {
-  const { user } = useAuth();
-
-  return useQuery({
-    queryKey: ["personalized-recommendations", user?.id],
-    queryFn: async () => {
-      if (!user?.id) return [];
-
-      const { data, error } = await supabase.rpc(
-        "get_personalized_recommendations",
-        {
-          user_uuid: user.id,
-          limit_count: 15,
-        }
-      );
-
-      if (error) {
-        console.error("Personalized recommendations error:", error);
-        // Return fallback algorithm products
-        const fallback = await supabase
-          .from("products")
-          .select(
-            `
-            id, name, slug, price, discounted_price, images, average_rating,
-            category:categories(name),
-            seller:sellers(business_name),
-            algorithm_score:product_algorithm_scores(total_score)
-          `
-          )
-          .eq("is_active", true)
-          .order("algorithm_score.total_score", { ascending: false })
-          .limit(15);
-
-        return fallback.data || [];
-      }
-
-      return data || [];
-    },
-    enabled: !!user?.id,
-    staleTime: 30 * 60 * 1000, // 30 minutes
-    cacheTime: 60 * 60 * 1000, // 1 hour
   });
 }
 
@@ -934,6 +509,65 @@ export function useAlgorithmAnalytics() {
     },
     staleTime: 60 * 60 * 1000, // 1 hour
     cacheTime: 2 * 60 * 60 * 1000, // 2 hours
+  });
+}
+
+/**
+ * Algoritmik satıcı öneri sistemi
+ * Satıcıları algoritmik olarak sıralar ve döndürür
+ */
+export function useAlgorithmSellers(filters = {}) {
+  return useQuery({
+    queryKey: ["algorithm-sellers", filters],
+    queryFn: async () => {
+      let query = supabase
+        .from("sellers")
+        .select(
+          `
+          id,
+          business_name,
+          verified,
+          avatar_url,
+          rating,
+          total_sales,
+          algorithm_score:seller_algorithm_scores(
+            total_score,
+            sales_score,
+            interaction_score,
+            social_score,
+            recency_score,
+            admin_boost,
+            calculated_at
+          )
+        `
+        )
+        .eq("is_active", true)
+        .eq("status", "approved");
+
+      // Filtreler
+      if (filters.verified) query = query.eq("verified", true);
+      if (filters.minRating) query = query.gte("rating", filters.minRating);
+      if (filters.sortBy === "algorithm") {
+        query = query.order("algorithm_score.total_score", {
+          ascending: false,
+        });
+      } else if (filters.sortBy === "sales") {
+        query = query.order("total_sales", { ascending: false });
+      } else if (filters.sortBy === "rating") {
+        query = query.order("rating", { ascending: false });
+      } else {
+        query = query.order("algorithm_score.total_score", {
+          ascending: false,
+        });
+      }
+      const limit = filters.limit || 12;
+      query = query.limit(limit);
+
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000,
   });
 }
 
@@ -1009,74 +643,25 @@ function calculateFinalAlgorithmScore(product) {
   return Math.max(0, Math.min(1000, finalScore)); // Clamp between 0-1000
 }
 
-function calculateFinalSellerScore(seller) {
-  const algorithmScore = seller.algorithm_score || {};
+/**
+ * Main analytics hook that provides tracking functionality
+ */
+export function useAnalytics() {
+  const trackEvent = useCallback((eventType, eventData) => {
+    // Simple event tracking - can be enhanced later
+    console.log("Analytics Event:", eventType, eventData);
 
-  // Base scores
-  let salesScore = algorithmScore.sales_performance_score || 0;
-  let satisfactionScore = algorithmScore.customer_satisfaction_score || 0;
-  let interactionScore = algorithmScore.interaction_score || 0;
-  let reliabilityScore = algorithmScore.reliability_score || 0;
-  let growthScore = algorithmScore.growth_score || 0;
-  let adminBoost = algorithmScore.admin_boost || 0;
+    // In a real implementation, this would send to analytics service
+    // For now, just log the event
+  }, []);
 
-  // Real-time adjustments
-
-  // Verification boost
-  let verificationBoost = seller.verified ? 25 : 0;
-
-  // Rating boost
-  let ratingBoost = 0;
-  if (seller.rating >= 4.8) {
-    ratingBoost = 20;
-  } else if (seller.rating >= 4.5) {
-    ratingBoost = 15;
-  } else if (seller.rating >= 4.0) {
-    ratingBoost = 10;
-  }
-
-  // Completion rate boost
-  let completionBoost = 0;
-  if (seller.completion_rate >= 98) {
-    completionBoost = 15;
-  } else if (seller.completion_rate >= 95) {
-    completionBoost = 10;
-  } else if (seller.completion_rate >= 90) {
-    completionBoost = 5;
-  }
-
-  // Response time boost
-  let responseBoost = 0;
-  if (seller.response_time <= 2) {
-    responseBoost = 10;
-  } else if (seller.response_time <= 6) {
-    responseBoost = 5;
-  }
-
-  // Product variety boost
-  let varietyBoost = 0;
-  const productCount = seller.product_count || 0;
-  if (productCount >= 50) {
-    varietyBoost = 15;
-  } else if (productCount >= 20) {
-    varietyBoost = 10;
-  } else if (productCount >= 10) {
-    varietyBoost = 5;
-  }
-
-  // Calculate final score
-  const finalScore =
-    salesScore * 0.25 + // 25% weight
-    satisfactionScore * 0.25 + // 25% weight
-    reliabilityScore * 0.2 + // 20% weight
-    interactionScore * 0.15 + // 15% weight
-    growthScore * 0.1 + // 10% weight
-    adminBoost * 0.05 + // 5% weight
-    verificationBoost +
-    ratingBoost +
-    completionBoost +
-    responseBoost +
-    varietyBoost;
-
-  return Math.max(0, Math.min(1000, finalScore)); // Clamp between 0-1000
+  return {
+    trackEvent,
+    trackInteraction: useTrackInteraction(),
+    sellerAnalytics: useSellerAnalytics(),
+    productAnalytics: useProductAnalytics,
+    adminAnalytics: useAdminAnalytics,
+    algorithmProducts: useAlgorithmProducts,
+    algorithmSellers: useAlgorithmSellers,
+  };
 }

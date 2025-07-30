@@ -118,33 +118,62 @@ export function useSellerDashboard() {
 /**
  * Hook for detailed sales analytics
  */
-export function useSellerSalesAnalytics(timeRange = "month") {
+export function useSellerSalesAnalytics(
+  timeRange = "month",
+  customStart = null,
+  customEnd = null
+) {
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ["seller-sales-analytics", user?.seller_id, timeRange],
+    queryKey: [
+      "seller-sales-analytics",
+      user?.seller_id,
+      timeRange,
+      customStart,
+      customEnd,
+    ],
     queryFn: async () => {
       if (!user?.seller_id) throw new Error("Satıcı girişi gerekli");
 
       // Calculate date range
-      const endDate = new Date();
-      const startDate = new Date();
+      let endDate = new Date();
+      let startDate = new Date();
 
-      switch (timeRange) {
-        case "week":
-          startDate.setDate(endDate.getDate() - 7);
-          break;
-        case "month":
-          startDate.setMonth(endDate.getMonth() - 1);
-          break;
-        case "quarter":
-          startDate.setMonth(endDate.getMonth() - 3);
-          break;
-        case "year":
-          startDate.setFullYear(endDate.getFullYear() - 1);
-          break;
-        default:
-          startDate.setMonth(endDate.getMonth() - 1);
+      if (timeRange === "custom" && customStart && customEnd) {
+        startDate = new Date(customStart);
+        endDate = new Date(customEnd);
+      } else {
+        switch (timeRange) {
+          case "today":
+            startDate = new Date();
+            break;
+          case "last7":
+            startDate.setDate(endDate.getDate() - 7);
+            break;
+          case "thisMonth":
+            startDate = new Date(endDate.getFullYear(), endDate.getMonth(), 1);
+            break;
+          case "lastMonth":
+            startDate = new Date(
+              endDate.getFullYear(),
+              endDate.getMonth() - 1,
+              1
+            );
+            endDate = new Date(endDate.getFullYear(), endDate.getMonth(), 0);
+            break;
+          case "month":
+            startDate.setMonth(endDate.getMonth() - 1);
+            break;
+          case "quarter":
+            startDate.setMonth(endDate.getMonth() - 3);
+            break;
+          case "year":
+            startDate.setFullYear(endDate.getFullYear() - 1);
+            break;
+          default:
+            startDate.setMonth(endDate.getMonth() - 1);
+        }
       }
 
       // Get orders in date range

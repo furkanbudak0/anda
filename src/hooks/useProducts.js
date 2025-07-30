@@ -12,13 +12,15 @@ import { supabase } from "../services/supabase";
 /**
  * Hook for fetching products with pagination and filters
  */
-export function useProducts(options = {}) {
+function useProducts(options = {}) {
   const {
     page = 1,
     limit = 20,
     sortBy = "created_at",
     sortOrder = "desc",
     categoryId = null,
+    category = null, // Kategori slug'ı
+    subcategory = null, // Alt kategori slug'ı
     sellerId = null,
     status = "active",
     priceMin = null,
@@ -40,6 +42,8 @@ export function useProducts(options = {}) {
         sortBy,
         sortOrder,
         categoryId,
+        category,
+        subcategory,
         sellerId,
         status,
         priceMin,
@@ -49,13 +53,41 @@ export function useProducts(options = {}) {
         featured,
       },
     ],
-    queryFn: () =>
-      apiProducts.getProducts({
+    queryFn: async () => {
+      // Kategori slug'ından kategori ID'sini bul
+      let actualCategoryId = categoryId;
+
+      if (category && !categoryId) {
+        const { data: categoryData } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("slug", category)
+          .single();
+
+        if (categoryData) {
+          actualCategoryId = categoryData.id;
+        }
+      }
+
+      // Alt kategori slug'ından kategori ID'sini bul
+      if (subcategory && !categoryId) {
+        const { data: subcategoryData } = await supabase
+          .from("categories")
+          .select("id")
+          .eq("slug", subcategory)
+          .single();
+
+        if (subcategoryData) {
+          actualCategoryId = subcategoryData.id;
+        }
+      }
+
+      return apiProducts.getProducts({
         offset,
         limit,
         sortBy,
         sortOrder,
-        categoryId,
+        categoryId: actualCategoryId,
         sellerId,
         status,
         priceMin,
@@ -63,7 +95,8 @@ export function useProducts(options = {}) {
         search,
         tags,
         featured,
-      }),
+      });
+    },
     enabled,
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000, // 5 minutes
@@ -73,7 +106,7 @@ export function useProducts(options = {}) {
 /**
  * Hook for infinite scrolling products
  */
-export function useInfiniteProducts(options = {}) {
+function useInfiniteProducts(options = {}) {
   const {
     limit = 20,
     sortBy = "created_at",
@@ -131,7 +164,7 @@ export function useInfiniteProducts(options = {}) {
 /**
  * Hook for fetching a single product
  */
-export function useProduct(productId, enabled = true) {
+function useProduct(productId, enabled = true) {
   return useQuery({
     queryKey: ["product", productId],
     queryFn: () => apiProducts.getProduct(productId),
@@ -143,7 +176,7 @@ export function useProduct(productId, enabled = true) {
 /**
  * Hook for fetching featured products
  */
-export function useFeaturedProducts(limit = 8) {
+function useFeaturedProducts(limit = 8) {
   return useQuery({
     queryKey: ["products", "featured", limit],
     queryFn: () => apiProducts.getFeaturedProducts(limit),
@@ -154,7 +187,7 @@ export function useFeaturedProducts(limit = 8) {
 /**
  * Hook for fetching best selling products
  */
-export function useBestSellers(limit = 12) {
+function useBestSellers(limit = 12) {
   return useQuery({
     queryKey: ["products", "best-sellers", limit],
     queryFn: () => apiProducts.getBestSellers(limit),
@@ -165,7 +198,7 @@ export function useBestSellers(limit = 12) {
 /**
  * Hook for fetching new arrivals
  */
-export function useNewArrivals(limit = 12) {
+function useNewArrivals(limit = 12) {
   return useQuery({
     queryKey: ["products", "new-arrivals", limit],
     queryFn: () => apiProducts.getNewArrivals(limit),
@@ -176,7 +209,7 @@ export function useNewArrivals(limit = 12) {
 /**
  * Hook for fetching products by category
  */
-export function useProductsByCategory(categorySlug, options = {}) {
+function useProductsByCategory(categorySlug, options = {}) {
   return useQuery({
     queryKey: ["products", "category", categorySlug, options],
     queryFn: () => apiProducts.getProductsByCategory(categorySlug, options),
@@ -188,7 +221,7 @@ export function useProductsByCategory(categorySlug, options = {}) {
 /**
  * Hook for searching products
  */
-export function useProductSearch(searchTerm, filters = {}) {
+function useProductSearch(searchTerm, filters = {}) {
   return useQuery({
     queryKey: ["products", "search", searchTerm, filters],
     queryFn: () => apiProducts.searchProducts(searchTerm, filters),
@@ -200,7 +233,7 @@ export function useProductSearch(searchTerm, filters = {}) {
 /**
  * Hook for fetching related products
  */
-export function useRelatedProducts(productId, limit = 4) {
+function useRelatedProducts(productId, limit = 4) {
   return useQuery({
     queryKey: ["products", "related", productId, limit],
     queryFn: () => apiProducts.getRelatedProducts(productId, limit),
@@ -212,7 +245,7 @@ export function useRelatedProducts(productId, limit = 4) {
 /**
  * Hook for fetching seller's products
  */
-export function useSellerProducts(sellerId, options = {}) {
+function useSellerProducts(sellerId, options = {}) {
   return useQuery({
     queryKey: ["products", "seller", sellerId, options],
     queryFn: () => apiProducts.getSellerProducts(sellerId, options),
@@ -224,14 +257,14 @@ export function useSellerProducts(sellerId, options = {}) {
 /**
  * Hook for creating a product (seller only)
  */
-export function useCreateProduct() {
+function useCreateProduct() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: apiProducts.createProduct,
     onSuccess: (product) => {
       queryClient.invalidateQueries(["products"]);
-      queryClient.setQueryData(["product", product.id], product);
+      queryClient.setQueryData(["product", product.uuid], product);
       toast.success("Ürün başarıyla oluşturuldu!");
     },
     onError: (error) => {
@@ -243,7 +276,7 @@ export function useCreateProduct() {
 /**
  * Hook for updating a product (seller only)
  */
-export function useUpdateProduct() {
+function useUpdateProduct() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -251,7 +284,7 @@ export function useUpdateProduct() {
       apiProducts.updateProduct(productId, updates),
     onSuccess: (product) => {
       queryClient.invalidateQueries(["products"]);
-      queryClient.setQueryData(["product", product.id], product);
+      queryClient.setQueryData(["product", product.uuid], product);
       toast.success("Ürün başarıyla güncellendi!");
     },
     onError: (error) => {
@@ -263,7 +296,7 @@ export function useUpdateProduct() {
 /**
  * Hook for deleting a product (seller only)
  */
-export function useDeleteProduct() {
+function useDeleteProduct() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -282,7 +315,7 @@ export function useDeleteProduct() {
 /**
  * Hook for bulk updating products
  */
-export function useBulkUpdateProducts() {
+function useBulkUpdateProducts() {
   const queryClient = useQueryClient();
 
   return useMutation({
@@ -301,7 +334,7 @@ export function useBulkUpdateProducts() {
 /**
  * Hook for tracking product views
  */
-export function useTrackProductView() {
+function useTrackProductView() {
   return useMutation({
     mutationFn: ({ productId, userId, sessionId }) =>
       apiProducts.trackProductView(productId, userId, sessionId),
@@ -312,7 +345,7 @@ export function useTrackProductView() {
 /**
  * Hook for fetching product analytics (seller only)
  */
-export function useProductAnalytics(productId, dateRange = "30d") {
+function useProductAnalytics(productId, dateRange = "30d") {
   return useQuery({
     queryKey: ["product-analytics", productId, dateRange],
     queryFn: () => apiProducts.getProductAnalytics(productId, dateRange),
@@ -324,7 +357,7 @@ export function useProductAnalytics(productId, dateRange = "30d") {
 /**
  * Hook for fetching product reviews
  */
-export function useProductReviews(productId, options = {}) {
+function useProductReviews(productId, options = {}) {
   return useQuery({
     queryKey: ["product-reviews", productId, options],
     queryFn: () => apiProducts.getProductReviews(productId, options),
@@ -333,68 +366,19 @@ export function useProductReviews(productId, options = {}) {
   });
 }
 
-/**
- * Hook for adding product to wishlist
- */
-export function useAddToWishlist() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: ({ productId, variantId }) =>
-      apiProducts.addToWishlist(productId, variantId),
-    onSuccess: () => {
-      queryClient.invalidateQueries(["wishlist"]);
-      toast.success("Ürün favorilere eklendi!");
-    },
-    onError: (error) => {
-      if (error.message.includes("already exists")) {
-        toast.error("Ürün zaten favorilerinizde!");
-      } else {
-        toast.error(`Favorilere eklenirken hata: ${error.message}`);
-      }
-    },
-  });
-}
-
-/**
- * Hook for removing product from wishlist
- */
-export function useRemoveFromWishlist() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ productId, variantId = null }) => {
-      const { data, error } = await supabase
-        .from("wishlist_items")
-        .delete()
-        .eq("product_id", productId)
-        .eq("variant_id", variantId);
-
-      if (error) throw new Error(error.message);
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries(["wishlist"]);
-      toast.success("Favorilerden kaldırıldı");
-    },
-    onError: (error) => {
-      toast.error(error.message || "Favorilerden kaldırılırken hata oluştu");
-    },
-  });
-}
 // Category Helper Functions
 
 /**
  * Get category by slug
  */
-export function getCategoryBySlug(slug) {
+function getCategoryBySlug(slug) {
   return categories.find((cat) => cat.slug === slug);
 }
 
 /**
  * Get subcategory by slug
  */
-export function getSubcategoryBySlug(categorySlug, subcategorySlug) {
+function getSubcategoryBySlug(categorySlug, subcategorySlug) {
   const category = getCategoryBySlug(categorySlug);
   return category?.subcategories?.find((sub) => sub.slug === subcategorySlug);
 }
@@ -402,11 +386,7 @@ export function getSubcategoryBySlug(categorySlug, subcategorySlug) {
 /**
  * Get products by category
  */
-export function getCategoryProducts(
-  products,
-  categorySlug,
-  subcategorySlug = null
-) {
+function getCategoryProducts(products, categorySlug, subcategorySlug = null) {
   if (!products) return [];
 
   return products.filter((product) => {
@@ -423,7 +403,7 @@ export function getCategoryProducts(
 /**
  * Get recommended products using algorithm
  */
-export function getRecommendedProducts(products, context = {}) {
+function getRecommendedProducts(products, context = {}) {
   if (!products || products.length === 0) return [];
 
   // Algorithm scoring weights
@@ -450,7 +430,7 @@ export function getRecommendedProducts(products, context = {}) {
 /**
  * Get trending products
  */
-export function getTrendingProducts(products, limit = 12) {
+function getTrendingProducts(products, limit = 12) {
   if (!products || products.length === 0) return [];
 
   return products
@@ -612,3 +592,29 @@ export const recommendationEngine = {
   },
 };
 
+// En alttaki export bloğunda her fonksiyon/utility sadece bir kez export edilecek şekilde düzenle. Tekrar edenleri kaldır.
+export {
+  useProducts,
+  useInfiniteProducts,
+  useProduct,
+  useFeaturedProducts,
+  useBestSellers,
+  useNewArrivals,
+  useProductsByCategory,
+  useProductSearch,
+  useRelatedProducts,
+  useSellerProducts,
+  useCreateProduct,
+  useUpdateProduct,
+  useDeleteProduct,
+  useBulkUpdateProducts,
+  useTrackProductView,
+  useProductAnalytics,
+  useProductReviews,
+  getCategoryBySlug,
+  getSubcategoryBySlug,
+  getCategoryProducts,
+  getRecommendedProducts,
+  getTrendingProducts,
+};
+// NOT: Bu dosyada default export YOKTUR. Başka dosyalarda default import varsa named import olarak düzeltin.

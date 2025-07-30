@@ -33,12 +33,9 @@ export default function ModernAuthForm({
     password: "",
     fullName: "",
     confirmPassword: "",
-    businessName: "",
-    taxNumber: "",
+    companyName: "",
+    taxId: "",
     phone: "",
-    tcId: "",
-    birthDate: "",
-    gender: "",
     acceptTerms: false,
     acceptPrivacy: false,
   });
@@ -94,27 +91,10 @@ export default function ModernAuthForm({
 
     if (isSignup) {
       if (!formData.fullName) {
-        errors.fullName = "Ad soyad gerekli";
+        errors.fullName = "Ad Soyad gerekli";
       }
-
-      if (formData.password !== formData.confirmPassword) {
-        errors.confirmPassword = "Şifreler eşleşmiyor";
-      }
-
       if (!formData.acceptTerms) {
         errors.acceptTerms = "Kullanım koşullarını kabul etmelisiniz";
-      }
-
-      if (isSeller) {
-        if (!formData.businessName) {
-          errors.businessName = "İşletme adı gerekli";
-        }
-        if (!formData.taxNumber) {
-          errors.taxNumber = "Vergi numarası gerekli";
-        }
-        if (!formData.phone) {
-          errors.phone = "Telefon numarası gerekli";
-        }
       }
     }
 
@@ -136,8 +116,8 @@ export default function ModernAuthForm({
           email: formData.email,
           password: formData.password,
           fullName: formData.fullName,
-          businessName: formData.businessName,
-          taxNumber: formData.taxNumber,
+          companyName: formData.companyName,
+          taxId: formData.taxId,
           phone: formData.phone,
         });
       } else {
@@ -241,7 +221,7 @@ export default function ModernAuthForm({
         >
           {isSignup
             ? isSeller
-              ? "İşletmenizi ANDA'ya taşıyın"
+              ? "İşletmenizi ANDA&apos;ya taşıyın"
               : "ANDA ailesine katılın"
             : isSeller
             ? "Satıcı panelinize erişin"
@@ -357,127 +337,77 @@ export default function ModernAuthForm({
           {/* Seller-specific fields */}
           {isSignup && isSeller && (
             <>
-              <motion.div
-                key="businessName"
-                variants={fieldVariants}
-                initial="initial"
-                animate="animate"
-                exit="exit"
-                transition={{ duration: 0.2, delay: 0.2 }}
-              >
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Ad Soyad *
+                </label>
+                <input
+                  type="text"
+                  name="fullName"
+                  value={formData.fullName}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Adınız ve Soyadınız"
+                />
+                {validationErrors.fullName && (
+                  <p className="mt-1 text-sm text-red-600">
+                    {validationErrors.fullName}
+                  </p>
+                )}
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   İşletme Adı *
                 </label>
                 <input
                   type="text"
-                  name="businessName"
-                  required
-                  className={`
-                    w-full px-4 py-3 border rounded-xl transition-all duration-200
-                    focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                    dark:bg-gray-800 dark:border-gray-600 dark:text-white
-                    ${
-                      validationErrors.businessName
-                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                        : "border-gray-300 hover:border-gray-400"
-                    }
-                  `}
-                  placeholder="Şirket/Mağaza adınız"
-                  value={formData.businessName}
+                  name="companyName"
+                  value={formData.companyName}
                   onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="Şirket/Mağaza adınız"
                 />
-                {validationErrors.businessName && (
-                  <motion.p
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mt-1 text-sm text-red-600 flex items-center"
-                  >
-                    <ExclamationTriangleIcon className="w-4 h-4 mr-1" />
-                    {validationErrors.businessName}
-                  </motion.p>
+                {validationErrors.companyName && (
+                  <p className="mt-1 text-sm text-red-600">
+                    {validationErrors.companyName}
+                  </p>
                 )}
-              </motion.div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <motion.div
-                  key="taxNumber"
-                  variants={fieldVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={{ duration: 0.2, delay: 0.3 }}
-                >
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Vergi No *
-                  </label>
-                  <input
-                    type="text"
-                    name="taxNumber"
-                    required
-                    className={`
-                      w-full px-4 py-3 border rounded-xl transition-all duration-200
-                      focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                      dark:bg-gray-800 dark:border-gray-600 dark:text-white
-                      ${
-                        validationErrors.taxNumber
-                          ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                          : "border-gray-300 hover:border-gray-400"
-                      }
-                    `}
-                    placeholder="1234567890"
-                    value={formData.taxNumber}
-                    onChange={handleInputChange}
-                  />
-                  {validationErrors.taxNumber && (
-                    <motion.p
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-1 text-sm text-red-600 text-xs"
-                    >
-                      {validationErrors.taxNumber}
-                    </motion.p>
-                  )}
-                </motion.div>
-
-                <motion.div
-                  key="phone"
-                  variants={fieldVariants}
-                  initial="initial"
-                  animate="animate"
-                  exit="exit"
-                  transition={{ duration: 0.2, delay: 0.4 }}
-                >
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Telefon *
-                  </label>
-                  <input
-                    type="tel"
-                    name="phone"
-                    required
-                    className={`
-                      w-full px-4 py-3 border rounded-xl transition-all duration-200
-                      focus:ring-2 focus:ring-blue-500 focus:border-blue-500
-                      dark:bg-gray-800 dark:border-gray-600 dark:text-white
-                      ${
-                        validationErrors.phone
-                          ? "border-red-500 focus:ring-red-500 focus:border-red-500"
-                          : "border-gray-300 hover:border-gray-400"
-                      }
-                    `}
-                    placeholder="0500 000 00 00"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                  />
-                  {validationErrors.phone && (
-                    <motion.p
-                      initial={{ opacity: 0, y: -10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      className="mt-1 text-sm text-red-600 text-xs"
-                    >
-                      {validationErrors.phone}
-                    </motion.p>
-                  )}
-                </motion.div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Vergi No *
+                </label>
+                <input
+                  type="text"
+                  name="taxId"
+                  value={formData.taxId}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="1234567890"
+                />
+                {validationErrors.taxId && (
+                  <p className="mt-1 text-sm text-red-600">
+                    {validationErrors.taxId}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Telefon *
+                </label>
+                <input
+                  type="tel"
+                  name="phone"
+                  value={formData.phone}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  placeholder="05xxxxxxxxx"
+                />
+                {validationErrors.phone && (
+                  <p className="mt-1 text-sm text-red-600">
+                    {validationErrors.phone}
+                  </p>
+                )}
               </div>
             </>
           )}

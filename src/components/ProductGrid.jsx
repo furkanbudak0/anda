@@ -6,25 +6,27 @@ import Spinner from "./Spinner";
 import EmptyState from "./EmptyState";
 
 /**
- * Product grid with infinite scroll functionality
+ * Product grid with infinite scroll functionality or simple array display
  */
 export default function ProductGrid({
+  products, // Direct products array (for simple display)
   filters = {},
   sortBy = "created_at",
   sortOrder = "desc",
   pageSize = 20,
   className = "",
   showFilters = true,
+  isLoading = false,
+  showDiscount = false,
 }) {
   const loadMoreRef = useRef();
 
-  // Infinite query for products
+  // Infinite query for products (always called, but only used when products array is not provided)
   const {
     data,
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-    isLoading,
     isError,
     error,
   } = useInfiniteQuery({
@@ -53,11 +55,18 @@ export default function ProductGrid({
       return pages.length; // Next page number
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    enabled: products === undefined, // Only enable when products array is not provided
   });
 
   // Intersection Observer for infinite scroll
   useEffect(() => {
-    if (!loadMoreRef.current || !hasNextPage || isFetchingNextPage) return;
+    if (
+      !loadMoreRef.current ||
+      !hasNextPage ||
+      isFetchingNextPage ||
+      products !== undefined
+    )
+      return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -75,7 +84,40 @@ export default function ProductGrid({
         observer.unobserve(loadMoreRef.current);
       }
     };
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage, products]);
+
+  // If products array is provided, use simple display
+  if (products !== undefined) {
+    return (
+      <div className={className}>
+        {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {[...Array(8)].map((_, index) => (
+              <ProductCardSkeleton key={index} />
+            ))}
+          </div>
+        ) : products && products.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            {products.map((product) => (
+              <ProductCard
+                key={product.uuid}
+                product={product}
+                showQuickActions={true}
+                showSellerInfo={true}
+                showDiscount={showDiscount}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            title="Ürün Bulunamadı"
+            description="Aradığınız kriterlere uygun ürün bulunamadı."
+            showAction={false}
+          />
+        )}
+      </div>
+    );
+  }
 
   // Get all products from all pages
   const allProducts = data?.pages.flatMap((page) => page.products) || [];
@@ -102,41 +144,28 @@ export default function ProductGrid({
     );
   }
 
-  if (allProducts.length === 0) {
-    return (
-      <EmptyState
-        title="Ürün Bulunamadı"
-        description="Aradığınız kriterlere uygun ürün bulunmuyor"
-        actionLabel="Filtreleri Temizle"
-        onAction={() => {
-          // Clear filters logic
-        }}
-      />
-    );
-  }
-
   return (
-    <div className={`space-y-6 ${className}`}>
-      {/* Results Summary */}
-      <div className="flex items-center justify-between">
-        <p className="text-gray-600">
-          <span className="font-medium">{allProducts.length}</span> ürün
-          {totalCount > allProducts.length && (
-            <span> (toplam {totalCount})</span>
-          )}
-        </p>
-
-        {showFilters && (
+    <div className={className}>
+      {/* Filters */}
+      {showFilters && (
+        <div className="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
           <div className="flex items-center gap-4">
-            {/* Sort Options */}
+            <span className="text-sm text-gray-600 dark:text-gray-400">
+              {totalCount} ürün bulundu
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="sort"
+              className="text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              Sırala:
+            </label>
             <select
-              value={`${sortBy}-${sortOrder}`}
-              onChange={(e) => {
-                const [newSortBy, newSortOrder] = e.target.value.split("-");
-                // Update sort logic would go here
-                // Sort changed logic
-              }}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
+              id="sort"
+              className="text-sm border border-gray-300 dark:border-gray-600 rounded-md px-3 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              defaultValue="created_at-desc"
             >
               <option value="created_at-desc">En Yeni</option>
               <option value="created_at-asc">En Eski</option>
@@ -147,14 +176,14 @@ export default function ProductGrid({
               <option value="view_count-desc">En Çok Görüntülenen</option>
             </select>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Product Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {allProducts.map((product) => (
           <ProductCard
-            key={product.id}
+            key={product.uuid}
             product={product}
             showQuickActions={true}
             showSellerInfo={true}

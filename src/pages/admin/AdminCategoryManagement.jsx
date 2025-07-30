@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../services/supabase";
 import {
@@ -8,21 +8,23 @@ import {
   FolderIcon,
   EyeIcon,
   EyeSlashIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
   MagnifyingGlassIcon,
 } from "@heroicons/react/24/outline";
 import toast from "react-hot-toast";
 import LoadingFallback from "../../components/LoadingFallback";
 import ConfirmationModal from "../../components/ConfirmationModal";
+import AdminSidebar from "../AdminSidebar";
+import { useHasPermission } from "../../hooks/useAdminAuth";
 
 export default function AdminCategoryManagement() {
-  const [searchTerm, setSearchTerm] = useState("");
+  // const [searchTerm, setSearchTerm] = useState("");
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [deleteCategory, setDeleteCategory] = useState(null);
   const [expandedCategories, setExpandedCategories] = useState(new Set());
-  const [isLoading, setIsLoading] = useState(false);
+  // const [isLoading, setIsLoading] = useState(false);
+  const [iconFile, setIconFile] = useState(null);
+  const [iconUrl, setIconUrl] = useState("");
 
   const [newCategory, setNewCategory] = useState({
     name: "",
@@ -35,12 +37,13 @@ export default function AdminCategoryManagement() {
   });
 
   const queryClient = useQueryClient();
+  const canManageCategories = useHasPermission("manage_categories");
 
   // Fetch categories from Supabase
   const {
     data: categories = [],
-    isLoading,
-    error,
+    isLoading: isLoadingQuery,
+    // error,
   } = useQuery({
     queryKey: ["admin-categories"],
     queryFn: async () => {
@@ -79,14 +82,14 @@ export default function AdminCategoryManagement() {
   // Add category mutation
   const addCategoryMutation = useMutation({
     mutationFn: async (categoryData) => {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from("categories")
         .insert(categoryData)
         .select()
         .single();
 
       if (error) throw error;
-      return data;
+      return true;
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["admin-categories"]);
@@ -159,13 +162,17 @@ export default function AdminCategoryManagement() {
     },
   });
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategory.name.trim()) {
       toast.error("Kategori adı gerekli!");
       return;
     }
+    // parent_id string gelirse int'e çevir, boşsa null gönder
+    let parentId = newCategory.parent_id;
+    if (parentId === "" || parentId === undefined) parentId = null;
+    else parentId = parseInt(parentId);
 
-    // Auto-generate slug from name
+    // Slug oluştur
     const slug = newCategory.name
       .toLowerCase()
       .replace(/ğ/g, "g")
@@ -177,11 +184,32 @@ export default function AdminCategoryManagement() {
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)+/g, "");
 
-    addCategoryMutation.mutate({
-      ...newCategory,
-      slug,
-      sort_order: categories.length,
-    });
+    const uploadedIconUrl = await handleIconUpload();
+
+    addCategoryMutation.mutate(
+      {
+        ...newCategory,
+        parent_id: parentId,
+        slug,
+        icon_url: uploadedIconUrl,
+        sort_order: categories.length,
+      },
+      {
+        onSuccess: () => {
+          setNewCategory({
+            name: "",
+            description: "",
+            parent_id: null,
+            icon: "",
+            color: "#3B82F6",
+            is_active: true,
+            sort_order: 0,
+          });
+          setIconFile(null);
+          setIconUrl("");
+        },
+      }
+    );
   };
 
   const handleEditCategory = (category) => {
@@ -197,14 +225,38 @@ export default function AdminCategoryManagement() {
     });
   };
 
-  const handleUpdateCategory = (categoryId, updateData) => {
+  const handleUpdateCategory = async (categoryId, updateData) => {
+    // Slug oluştur
+    const slug = updateData.name
+      .toLowerCase()
+      .replace(/ğ/g, "g")
+      .replace(/ü/g, "u")
+      .replace(/ş/g, "s")
+      .replace(/ı/g, "i")
+      .replace(/ö/g, "o")
+      .replace(/ç/g, "c")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)+/g, "");
+    // İkonu tekrar upload et (varsa yeni dosya seçildiyse)
+    let uploadedIconUrl = iconUrl;
+    if (iconFile) {
+      uploadedIconUrl = await handleIconUpload();
+    }
     updateCategoryMutation.mutate({
       id: categoryId,
-      data: updateData,
+      data: {
+        ...updateData,
+        slug,
+        icon_url: uploadedIconUrl,
+      },
     });
   };
 
   const handleDeleteCategory = (categoryId) => {
+    if (!canManageCategories) {
+      toast.error("Bu işlem için yetkiniz yok!");
+      return;
+    }
     if (window.confirm("Bu kategoriyi silmek istediğinizden emin misiniz?")) {
       deleteCategoryMutation.mutate(categoryId);
     }
@@ -228,397 +280,453 @@ export default function AdminCategoryManagement() {
     });
   };
 
-  if (isLoading) {
+  const handleIconChange = (e) => {
+    setIconFile(e.target.files[0]);
+  };
+
+  const handleIconUpload = async () => {
+    if (!iconFile) return "";
+    const fileExt = iconFile.name.split(".").pop();
+    const fileName = `${Date.now()}_${Math.random()
+      .toString(36)
+      .substring(2)}.${fileExt}`;
+    const { data, error } = await supabase.storage
+      .from("category_icons")
+      .upload(fileName, iconFile);
+    if (error) {
+      alert("İkon yüklenemedi: " + error.message);
+      return "";
+    }
+    const { publicUrl } = supabase.storage
+      .from("category_icons")
+      .getPublicUrl(fileName).data;
+    setIconUrl(publicUrl);
+    return publicUrl;
+  };
+
+  if (isLoadingQuery) {
     return <LoadingFallback />;
   }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Kategori Yönetimi
-          </h1>
-          <p className="text-gray-600">
-            Ürün kategorilerini yönetin ve düzenleyin
-          </p>
-        </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-        >
-          <PlusIcon className="w-5 h-5" />
-          Kategori Ekle
-        </button>
-      </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 pt-16 pb-16">
+        {/* Header */}
+        <div className="p-6 max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Kategori Yönetimi
+              </h1>
+              <p className="text-gray-600">
+                Ürün kategorilerini yönetin ve düzenleyin
+              </p>
+            </div>
+            {canManageCategories && (
+              <button
+                onClick={() => setShowAddModal(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+              >
+                <PlusIcon className="w-5 h-5" />
+                Kategori Ekle
+              </button>
+            )}
+          </div>
 
-      {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white p-4 rounded-lg shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FolderIcon className="w-5 h-5 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Toplam Kategori</p>
-              <p className="text-xl font-semibold text-gray-900">
-                {categories.length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <EyeIcon className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Aktif Kategori</p>
-              <p className="text-xl font-semibold text-gray-900">
-                {categories.filter((cat) => cat.is_active).length}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-              {/* TagIcon was removed from imports, so using MagnifyingGlassIcon as a placeholder */}
-              <MagnifyingGlassIcon className="w-5 h-5 text-purple-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Alt Kategori</p>
-              <p className="text-xl font-semibold text-gray-900">
-                {categories.reduce(
-                  (sum, cat) => sum + cat.subcategories.length,
-                  0
-                )}
-              </p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white p-4 rounded-lg shadow">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-              {/* FolderOpenIcon was removed from imports, so using MagnifyingGlassIcon as a placeholder */}
-              <MagnifyingGlassIcon className="w-5 h-5 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-500">Toplam Ürün</p>
-              <p className="text-xl font-semibold text-gray-900">
-                {categories.reduce((sum, cat) => sum + cat.product_count, 0)}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Categories List */}
-      <div className="bg-white rounded-lg shadow">
-        <div className="p-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">Kategoriler</h2>
-        </div>
-        <div className="divide-y divide-gray-200">
-          {categories.map((category) => (
-            <div key={category.id} className="p-4">
-              {/* Main Category */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={() => toggleCategoryExpansion(category.id)}
-                    className="text-gray-400 hover:text-gray-600"
-                  >
-                    {category.subcategories.length > 0 ? (
-                      expandedCategories.has(category.id) ? (
-                        <FolderIcon className="w-5 h-5" />
-                      ) : (
-                        <FolderIcon className="w-5 h-5" />
-                      )
-                    ) : (
-                      <MagnifyingGlassIcon className="w-5 h-5" />
-                    )}
-                  </button>
-                  <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
-                    style={{
-                      backgroundColor: category.color + "20",
-                      color: category.color,
-                    }}
-                  >
-                    {category.icon}
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">
-                      {category.name}
-                    </h3>
-                    <p className="text-sm text-gray-500">
-                      {category.description}
-                    </p>
-                  </div>
+          {/* Statistics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 p-6 max-w-7xl mx-auto">
+            <div className="bg-white p-4 rounded-lg shadow">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <FolderIcon className="w-5 h-5 text-blue-600" />
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-500">
-                    {category.product_count} ürün
-                  </span>
-                  <button
-                    onClick={() => handleToggleActive(category)}
-                    className={`p-1 rounded ${
-                      category.is_active
-                        ? "text-green-600 hover:bg-green-50"
-                        : "text-gray-400 hover:bg-gray-50"
-                    }`}
-                  >
-                    {category.is_active ? (
-                      <EyeIcon className="w-4 h-4" />
-                    ) : (
-                      <EyeSlashIcon className="w-4 h-4" />
-                    )}
-                  </button>
-                  <button
-                    onClick={() => handleEditCategory(category)}
-                    className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    <PencilIcon className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={() => setDeleteCategory(category)}
-                    className="p-1 text-red-600 hover:bg-red-50 rounded"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                  </button>
+                <div>
+                  <p className="text-sm text-gray-500">Toplam Kategori</p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {categories.length}
+                  </p>
                 </div>
               </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                  <EyeIcon className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Aktif Kategori</p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {categories.filter((cat) => cat.is_active).length}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                  {/* TagIcon was removed from imports, so using MagnifyingGlassIcon as a placeholder */}
+                  <MagnifyingGlassIcon className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Alt Kategori</p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {categories.reduce(
+                      (sum, cat) => sum + cat.subcategories.length,
+                      0
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg shadow">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                  {/* FolderOpenIcon was removed from imports, so using MagnifyingGlassIcon as a placeholder */}
+                  <MagnifyingGlassIcon className="w-5 h-5 text-orange-600" />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">Toplam Ürün</p>
+                  <p className="text-xl font-semibold text-gray-900">
+                    {categories.reduce(
+                      (sum, cat) => sum + cat.product_count,
+                      0
+                    )}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
 
-              {/* Subcategories */}
-              {expandedCategories.has(category.id) &&
-                category.subcategories.length > 0 && (
-                  <div className="ml-8 mt-3 space-y-2">
-                    {category.subcategories.map((subcat) => (
-                      <div
-                        key={subcat.id}
-                        className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg"
+          {/* Categories List */}
+          <div className="bg-white rounded-lg shadow p-6 max-w-7xl mx-auto">
+            <div className="p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Kategoriler
+              </h2>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {categories.map((category) => (
+                <div key={category.id} className="p-4">
+                  {/* Main Category */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => toggleCategoryExpansion(category.id)}
+                        className="text-gray-400 hover:text-gray-600"
                       >
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-6 h-6 rounded-md flex items-center justify-center text-xs"
-                            style={{
-                              backgroundColor: subcat.color + "20",
-                              color: subcat.color,
-                            }}
-                          >
-                            {subcat.icon}
-                          </div>
-                          <div>
-                            <h4 className="font-medium text-gray-900">
-                              {subcat.name}
-                            </h4>
-                            <p className="text-xs text-gray-500">
-                              {subcat.description}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500">
-                            {subcat.product_count} ürün
-                          </span>
-                          <button
-                            onClick={() => handleToggleActive(subcat)}
-                            className={`p-1 rounded ${
-                              subcat.is_active
-                                ? "text-green-600 hover:bg-green-50"
-                                : "text-gray-400 hover:bg-gray-50"
-                            }`}
-                          >
-                            {subcat.is_active ? (
-                              <EyeIcon className="w-3 h-3" />
-                            ) : (
-                              <EyeSlashIcon className="w-3 h-3" />
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleEditCategory(subcat)}
-                            className="p-1 text-blue-600 hover:bg-blue-50 rounded"
-                          >
-                            <PencilIcon className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteCategory(subcat)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded"
-                          >
-                            <TrashIcon className="w-3 h-3" />
-                          </button>
-                        </div>
+                        {category.subcategories.length > 0 ? (
+                          expandedCategories.has(category.id) ? (
+                            <FolderIcon className="w-5 h-5" />
+                          ) : (
+                            <FolderIcon className="w-5 h-5" />
+                          )
+                        ) : (
+                          <MagnifyingGlassIcon className="w-5 h-5" />
+                        )}
+                      </button>
+                      <div
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+                        style={{
+                          backgroundColor: category.color + "20",
+                          color: category.color,
+                        }}
+                      >
+                        {category.icon}
                       </div>
-                    ))}
+                      <div>
+                        <h3 className="font-medium text-gray-900">
+                          {category.name}
+                        </h3>
+                        <p className="text-sm text-gray-500">
+                          {category.description}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">
+                        {category.product_count} ürün
+                      </span>
+                      <button
+                        onClick={() => handleToggleActive(category)}
+                        className={`p-1 rounded ${
+                          category.is_active
+                            ? "text-green-600 hover:bg-green-50"
+                            : "text-gray-400 hover:bg-gray-50"
+                        }`}
+                      >
+                        {category.is_active ? (
+                          <EyeIcon className="w-4 h-4" />
+                        ) : (
+                          <EyeSlashIcon className="w-4 h-4" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleEditCategory(category)}
+                        className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                      >
+                        <PencilIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteCategory(category)}
+                        className="p-1 text-red-600 hover:bg-red-50 rounded"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
-                )}
-            </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Add/Edit Category Modal */}
-      {(showAddModal || editingCategory) && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold text-gray-900 mb-4">
-              {editingCategory ? "Kategori Düzenle" : "Yeni Kategori Ekle"}
-            </h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Kategori Adı *
-                </label>
-                <input
-                  type="text"
-                  value={newCategory.name}
-                  onChange={(e) =>
-                    setNewCategory({ ...newCategory, name: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Kategori adı"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Açıklama
-                </label>
-                <textarea
-                  value={newCategory.description}
-                  onChange={(e) =>
-                    setNewCategory({
-                      ...newCategory,
-                      description: e.target.value,
-                    })
-                  }
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Kategori açıklaması"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+                  {/* Subcategories */}
+                  {expandedCategories.has(category.id) &&
+                    category.subcategories.length > 0 && (
+                      <div className="ml-8 mt-3 space-y-2">
+                        {category.subcategories.map((subcat) => (
+                          <div
+                            key={subcat.id}
+                            className="flex items-center justify-between py-2 px-3 bg-gray-50 rounded-lg"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="w-6 h-6 rounded-md flex items-center justify-center text-xs"
+                                style={{
+                                  backgroundColor: subcat.color + "20",
+                                  color: subcat.color,
+                                }}
+                              >
+                                {subcat.icon}
+                              </div>
+                              <div>
+                                <h4 className="font-medium text-gray-900">
+                                  {subcat.name}
+                                </h4>
+                                <p className="text-xs text-gray-500">
+                                  {subcat.description}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-500">
+                                {subcat.product_count} ürün
+                              </span>
+                              <button
+                                onClick={() => handleToggleActive(subcat)}
+                                className={`p-1 rounded ${
+                                  subcat.is_active
+                                    ? "text-green-600 hover:bg-green-50"
+                                    : "text-gray-400 hover:bg-gray-50"
+                                }`}
+                              >
+                                {subcat.is_active ? (
+                                  <EyeIcon className="w-3 h-3" />
+                                ) : (
+                                  <EyeSlashIcon className="w-3 h-3" />
+                                )}
+                              </button>
+                              <button
+                                onClick={() => handleEditCategory(subcat)}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded"
+                              >
+                                <PencilIcon className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={() => setDeleteCategory(subcat)}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded"
+                              >
+                                <TrashIcon className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Add/Edit Category Modal */}
+        {(showAddModal || editingCategory) && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <h2 className="text-xl font-bold text-gray-900 mb-4">
+                {editingCategory ? "Kategori Düzenle" : "Yeni Kategori Ekle"}
+              </h2>
+              <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    İkon
+                    Kategori Adı *
                   </label>
                   <input
                     type="text"
-                    value={newCategory.icon}
+                    value={newCategory.name}
                     onChange={(e) =>
-                      setNewCategory({ ...newCategory, icon: e.target.value })
+                      setNewCategory({ ...newCategory, name: e.target.value })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    placeholder="🛍️"
+                    placeholder="Kategori adı"
                   />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Renk
+                    Açıklama
                   </label>
-                  <input
-                    type="color"
-                    value={newCategory.color}
+                  <textarea
+                    value={newCategory.description}
                     onChange={(e) =>
-                      setNewCategory({ ...newCategory, color: e.target.value })
+                      setNewCategory({
+                        ...newCategory,
+                        description: e.target.value,
+                      })
                     }
-                    className="w-full h-10 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Kategori açıklaması"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      İkon
+                    </label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleIconChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                    {iconFile && (
+                      <p className="mt-2 text-sm text-gray-500">
+                        Seçilen dosya: {iconFile.name}
+                      </p>
+                    )}
+                    {iconUrl && (
+                      <p className="mt-2 text-sm text-gray-500">
+                        İkon URL:{" "}
+                        <a
+                          href={iconUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {iconUrl}
+                        </a>
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Renk
+                    </label>
+                    <input
+                      type="color"
+                      value={newCategory.color}
+                      onChange={(e) =>
+                        setNewCategory({
+                          ...newCategory,
+                          color: e.target.value,
+                        })
+                      }
+                      className="w-full h-10 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Üst Kategori
+                  </label>
+                  <select
+                    value={newCategory.parent_id || ""}
+                    onChange={(e) =>
+                      setNewCategory({
+                        ...newCategory,
+                        parent_id: e.target.value
+                          ? parseInt(e.target.value)
+                          : null,
+                      })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Ana Kategori</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    id="is_active"
+                    checked={newCategory.is_active}
+                    onChange={(e) =>
+                      setNewCategory({
+                        ...newCategory,
+                        is_active: e.target.checked,
+                      })
+                    }
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <label
+                    htmlFor="is_active"
+                    className="ml-2 block text-sm text-gray-700"
+                  >
+                    Aktif kategori
+                  </label>
+                </div>
+                {/* Emoji alanları kaldırıldı */}
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Üst Kategori
-                </label>
-                <select
-                  value={newCategory.parent_id || ""}
-                  onChange={(e) =>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => {
+                    setShowAddModal(false);
+                    setEditingCategory(null);
                     setNewCategory({
-                      ...newCategory,
-                      parent_id: e.target.value
-                        ? parseInt(e.target.value)
-                        : null,
-                    })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      name: "",
+                      description: "",
+                      parent_id: null,
+                      icon: "",
+                      color: "#3B82F6",
+                      is_active: true,
+                      sort_order: 0,
+                    });
+                    setIconFile(null);
+                    setIconUrl("");
+                  }}
+                  className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
                 >
-                  <option value="">Ana Kategori</option>
-                  {categories.map((cat) => (
-                    <option key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="is_active"
-                  checked={newCategory.is_active}
-                  onChange={(e) =>
-                    setNewCategory({
-                      ...newCategory,
-                      is_active: e.target.checked,
-                    })
+                  İptal
+                </button>
+                <button
+                  onClick={
+                    editingCategory
+                      ? () =>
+                          handleUpdateCategory(editingCategory.id, newCategory)
+                      : handleAddCategory
                   }
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                />
-                <label
-                  htmlFor="is_active"
-                  className="ml-2 block text-sm text-gray-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
                 >
-                  Aktif kategori
-                </label>
+                  {editingCategory ? "Güncelle" : "Ekle"}
+                </button>
               </div>
-            </div>
-            <div className="flex justify-end gap-3 mt-6">
-              <button
-                onClick={() => {
-                  setShowAddModal(false);
-                  setEditingCategory(null);
-                  setNewCategory({
-                    name: "",
-                    description: "",
-                    parent_id: null,
-                    icon: "",
-                    color: "#3B82F6",
-                    is_active: true,
-                    sort_order: 0,
-                  });
-                }}
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
-              >
-                İptal
-              </button>
-              <button
-                onClick={
-                  editingCategory
-                    ? () =>
-                        handleUpdateCategory(editingCategory.id, newCategory)
-                    : handleAddCategory
-                }
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-              >
-                {editingCategory ? "Güncelle" : "Ekle"}
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Delete Confirmation Modal */}
-      {deleteCategory && (
-        <ConfirmationModal
-          isOpen={!!deleteCategory}
-          onClose={() => setDeleteCategory(null)}
-          onConfirm={() => handleDeleteCategory(deleteCategory.id)}
-          title="Kategori Sil"
-          message={`"${deleteCategory.name}" kategorisini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`}
-          confirmText="Sil"
-          cancelText="İptal"
-          type="danger"
-        />
-      )}
+        {/* Delete Confirmation Modal */}
+        {deleteCategory && (
+          <ConfirmationModal
+            isOpen={!!deleteCategory}
+            onClose={() => setDeleteCategory(null)}
+            onConfirm={() => handleDeleteCategory(deleteCategory.id)}
+            title="Kategori Sil"
+            message={`"${deleteCategory.name}" kategorisini silmek istediğinizden emin misiniz? Bu işlem geri alınamaz.`}
+            confirmText="Sil"
+            cancelText="İptal"
+            type="danger"
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -2,19 +2,16 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   EnvelopeIcon,
-  ChatBubbleLeftRightIcon,
-  ExclamationTriangleIcon,
-  CheckCircleIcon,
   EyeIcon,
   TrashIcon,
-  ReplyIcon,
+  ArrowUturnLeftIcon,
   UserGroupIcon,
   MagnifyingGlassIcon,
   FunnelIcon,
 } from "@heroicons/react/24/outline";
 import { supabase } from "../../services/supabase";
 import { useAuth } from "../../contexts/AuthContext";
-import NavBar from "../../components/NavBar";
+import AdminSidebar from "../AdminSidebar";
 import Spinner from "../../components/Spinner";
 import { formatDate } from "../../utils/formatters";
 import toast from "react-hot-toast";
@@ -222,10 +219,9 @@ export default function AdminMessagesSystem() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="pt-32 pb-16">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 pt-16 pb-16">
         <div className="max-w-7xl mx-auto px-4">
           {/* Header */}
           <div className="mb-8">
@@ -415,7 +411,7 @@ export default function AdminMessagesSystem() {
                                 onClick={() => handleReply(message)}
                                 className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300"
                               >
-                                <ReplyIcon className="w-4 h-4" />
+                                <ArrowUturnLeftIcon className="w-4 h-4" />
                               </button>
                               <button
                                 onClick={() => handleDelete(message.id)}

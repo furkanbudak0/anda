@@ -148,7 +148,7 @@ const AdminProfile = () => {
       {products && products.length > 0 ? (
         <ul className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {products.map((product) => (
-            <li key={product.id} className="border p-4 rounded shadow-sm">
+            <li key={product.uuid} className="border p-4 rounded shadow-sm">
               <p className="font-bold">{product.name}</p>
               <p>{product.description}</p>
               <p>Stok: {product.availableStock}</p>

@@ -5,6 +5,8 @@
  * Console.log'ların production'da görünmemesi için wrapper
  */
 
+import { supabase } from "../services/supabase";
+
 // Environment kontrollü logging
 const isDevelopment = import.meta.env.DEV;
 
@@ -224,3 +226,22 @@ export const {
   perf,
   ecommerce,
 } = logger;
+
+/**
+ * Uygulama loglarını Supabase app_logs tablosuna kaydeder.
+ * @param {Object} param0 - Log parametreleri
+ * @param {string} param0.log_level - Log seviyesi (info, warning, error, debug)
+ * @param {string} param0.message - Log mesajı
+ * @param {Object} param0.details - Ek detaylar (JSON)
+ * @param {string} [param0.user_id] - Kullanıcı ID (isteğe bağlı)
+ */
+export async function logEvent({ log_level, message, details, user_id }) {
+  try {
+    await supabase
+      .from("app_logs")
+      .insert([{ log_level, message, details, user_id }]);
+  } catch (e) {
+    // Konsola da yaz, sessizce yutma
+    console.error("Log kaydedilemedi:", e);
+  }
+}

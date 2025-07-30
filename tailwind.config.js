@@ -33,17 +33,17 @@ module.exports = {
           950: "#431407",
         },
         accent: {
-          50: "#fdf4ff",
-          100: "#fae8ff",
-          200: "#f5d0fe",
-          300: "#f0abfc",
-          400: "#e879f9",
-          500: "#d946ef", // Purple accent
-          600: "#c026d3",
-          700: "#a21caf",
-          800: "#86198f",
-          900: "#701a75",
-          950: "#4a044e",
+          50: "#fff7ed",
+          100: "#ffedd5",
+          200: "#fed7aa",
+          300: "#fdba74",
+          400: "#fb923c",
+          500: "#f97316", // Orange accent (değiştirildi)
+          600: "#ea580c",
+          700: "#c2410c",
+          800: "#9a3412",
+          900: "#7c2d12",
+          950: "#431407",
         },
         success: {
           50: "#f0fdf4",
@@ -89,8 +89,8 @@ module.exports = {
           discount: "#dc2626", // Red for discounts
           sale: "#f97316", // Orange for sales
           new: "#22c55e", // Green for new items
-          featured: "#d946ef", // Purple for featured
-          premium: "#7c3aed", // Violet for premium
+          featured: "#f97316", // Orange for featured (değiştirildi)
+          premium: "#f59e0b", // Orange for premium (değiştirildi)
         },
         // Rating colors
         rating: {

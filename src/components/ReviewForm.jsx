@@ -4,6 +4,7 @@ import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import { useCreateReview } from "../hooks/useReviews";
 import { useAuth } from "../contexts/AuthContext";
 import toast from "react-hot-toast";
+import PropTypes from "prop-types";
 
 export default function ReviewForm({ product, orderId, onSuccess, onCancel }) {
   const { user } = useAuth();
@@ -25,6 +26,11 @@ export default function ReviewForm({ product, orderId, onSuccess, onCancel }) {
       return;
     }
 
+    if (!product) {
+      toast.error("Yorum eklemek için bir ürün seçmelisiniz.");
+      return;
+    }
+
     if (formData.rating === 0) {
       toast.error("Lütfen bir puan verin");
       return;
@@ -37,7 +43,7 @@ export default function ReviewForm({ product, orderId, onSuccess, onCancel }) {
 
     try {
       await createReviewMutation.mutateAsync({
-        productId: product.id,
+        productUuid: product.uuid,
         orderId: orderId,
         rating: formData.rating,
         title: formData.title,
@@ -127,21 +133,39 @@ export default function ReviewForm({ product, orderId, onSuccess, onCancel }) {
         </h3>
 
         {/* Product Info */}
-        <div className="flex items-center space-x-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-          <img
-            src={product.image_url || "/placeholder-product.jpg"}
-            alt={product.name}
-            className="w-16 h-16 object-cover rounded-lg"
-          />
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">
-              {product.name}
-            </h4>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Bu ürün hakkında deneyiminizi paylaşın
-            </p>
+        {product ? (
+          <div className="flex items-center space-x-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <img
+              src={product.image_url || "/placeholder-product.jpg"}
+              alt={product.name || "Ürün"}
+              className="w-16 h-16 object-cover rounded-lg"
+            />
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">
+                {product.name}
+              </h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Bu ürün hakkında deneyiminizi paylaşın
+              </p>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center space-x-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <img
+              src="/placeholder-product.jpg"
+              alt="Ürün"
+              className="w-16 h-16 object-cover rounded-lg"
+            />
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">
+                Ürün seçilmedi
+              </h4>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Lütfen bir ürün seçerek değerlendirme yapın
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -290,3 +314,14 @@ export default function ReviewForm({ product, orderId, onSuccess, onCancel }) {
     </div>
   );
 }
+
+ReviewForm.propTypes = {
+  product: PropTypes.shape({
+    uuid: PropTypes.string,
+    image_url: PropTypes.string,
+    name: PropTypes.string,
+  }),
+  orderId: PropTypes.string,
+  onSuccess: PropTypes.func,
+  onCancel: PropTypes.func,
+};

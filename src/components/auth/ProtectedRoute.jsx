@@ -29,8 +29,8 @@ export default function ProtectedRoute({
   } = useAuth();
   const location = useLocation();
 
-  // Show loading state
-  if (isLoading) {
+  // Show loading state - wait for auth to be fully initialized
+  if (isLoading || role === null) {
     return (
       loadingComponent || (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 to-purple-100">

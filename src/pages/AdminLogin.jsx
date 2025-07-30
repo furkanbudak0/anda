@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAdminLogin } from "../hooks/useAdminAuth";
+import { useAuth } from "../contexts/AuthContext";
 import {
   ShieldCheckIcon,
   EyeIcon,
@@ -15,7 +16,15 @@ export default function AdminLogin() {
   const [rememberMe, setRememberMe] = useState(false);
 
   const { mutate: adminLogin, isLoading } = useAdminLogin();
+  const { isAuthenticated, role, isLoading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  // Redirect if already authenticated as admin
+  useEffect(() => {
+    if (isAuthenticated && role === "admin" && !authLoading) {
+      navigate("/admin/dashboard");
+    }
+  }, [isAuthenticated, role, authLoading, navigate]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -23,8 +32,9 @@ export default function AdminLogin() {
     adminLogin(
       { email, password },
       {
-        onSuccess: () => {
-          navigate("/admin");
+        onSuccess: async () => {
+          // AuthContext'in güncellenmesini bekle
+          // Navigate işlemi useEffect'te otomatik olarak yapılacak
         },
       }
     );

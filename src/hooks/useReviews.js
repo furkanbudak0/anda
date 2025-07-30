@@ -6,14 +6,14 @@ import toast from "react-hot-toast";
 /**
  * Hook for fetching product reviews
  */
-export function useProductReviews(productId, options = {}) {
+export function useProductReviews(productUuid, options = {}) {
   return useQuery({
-    queryKey: ["product-reviews", productId],
+    queryKey: ["product-reviews", productUuid],
     queryFn: async () => {
-      if (!productId) return [];
+      if (!productUuid) return [];
 
       const { data, error } = await supabase
-        .from("product_reviews")
+        .from("reviews")
         .select(
           `
           id,
@@ -25,21 +25,21 @@ export function useProductReviews(productId, options = {}) {
           helpful_count,
           not_helpful_count,
           created_at,
-          user:users(
+          user:profiles(
             id,
             full_name,
             avatar_url
           )
         `
         )
-        .eq("product_id", productId)
+        .eq("product_id", productUuid)
         .eq("is_approved", true)
         .order("created_at", { ascending: false });
 
       if (error) throw new Error(error.message);
       return data || [];
     },
-    enabled: !!productId,
+    enabled: !!productUuid,
     ...options,
   });
 }
@@ -53,7 +53,7 @@ export function useCreateReview() {
 
   return useMutation({
     mutationFn: async ({
-      productId,
+      productUuid,
       orderId,
       rating,
       title,
@@ -64,9 +64,9 @@ export function useCreateReview() {
 
       // Check if user has already reviewed this product for this order
       const { data: existingReview } = await supabase
-        .from("product_reviews")
+        .from("reviews")
         .select("id")
-        .eq("product_id", productId)
+        .eq("product_id", productUuid)
         .eq("user_id", user.id)
         .eq("order_id", orderId)
         .single();
@@ -80,7 +80,7 @@ export function useCreateReview() {
         .from("order_items")
         .select("id")
         .eq("order_id", orderId)
-        .eq("product_id", productId)
+        .eq("product_id", productUuid)
         .single();
 
       if (!orderItem) {
@@ -90,9 +90,9 @@ export function useCreateReview() {
       }
 
       const { data, error } = await supabase
-        .from("product_reviews")
+        .from("reviews")
         .insert({
-          product_id: productId,
+          product_id: productUuid,
           user_id: user.id,
           order_id: orderId,
           rating,
@@ -212,7 +212,7 @@ export function useAdminReviews(filters = {}) {
       }
 
       let query = supabase
-        .from("product_reviews")
+        .from("reviews")
         .select(
           `
           id,
@@ -226,7 +226,7 @@ export function useAdminReviews(filters = {}) {
           not_helpful_count,
           admin_notes,
           created_at,
-          user:users(
+          user:profiles(
             id,
             full_name,
             email,
@@ -292,7 +292,7 @@ export function useModerateReview() {
       }
 
       const { data, error } = await supabase
-        .from("product_reviews")
+        .from("reviews")
         .update(updates)
         .eq("id", reviewId)
         .select()
@@ -329,7 +329,7 @@ export function useDeleteReview() {
       }
 
       const { error } = await supabase
-        .from("product_reviews")
+        .from("reviews")
         .delete()
         .eq("id", reviewId);
 

@@ -10,19 +10,18 @@ import {
   GiftIcon,
   CalendarIcon,
   TagIcon,
-  PercentIcon,
   CurrencyDollarIcon,
   UsersIcon,
 } from "@heroicons/react/24/outline";
 import { supabase } from "../../services/supabase";
 import { useAuth } from "../../contexts/AuthContext";
-import NavBar from "../../components/NavBar";
+import AdminSidebar from "../AdminSidebar";
 import Spinner from "../../components/Spinner";
 import { formatPrice, formatDate } from "../../utils/formatters";
 import toast from "react-hot-toast";
 
 const campaignTypes = [
-  { value: "discount", label: "İndirim Kampanyası", icon: PercentIcon },
+  { value: "discount", label: "İndirim Kampanyası", icon: TagIcon },
   { value: "promotion", label: "Promosyon", icon: GiftIcon },
   { value: "featured", label: "Öne Çıkarılan", icon: TagIcon },
   { value: "seasonal", label: "Sezonsal", icon: CalendarIcon },
@@ -258,10 +257,9 @@ export default function AdminCampaignManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="pt-32 pb-16">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 pt-16 pb-16">
         <div className="max-w-7xl mx-auto px-4">
           {/* Header */}
           <div className="flex justify-between items-center mb-8">
@@ -346,7 +344,7 @@ export default function AdminCampaignManagement() {
                         <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                           {campaign.discount_percentage ? (
                             <>
-                              <PercentIcon className="w-4 h-4" />
+                              <TagIcon className="w-4 h-4" />
                               <span>
                                 %{campaign.discount_percentage} indirim
                               </span>

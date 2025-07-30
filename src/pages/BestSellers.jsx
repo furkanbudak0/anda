@@ -269,9 +269,9 @@ export default function BestSellers() {
                 <TrophyIcon className="w-8 h-8 text-white" />
               </div>
               <h1 className="text-4xl font-bold bg-gradient-to-r from-orange-600 to-red-600 bg-clip-text text-transparent">
-              En Çok Satanlar
-            </h1>
-          </div>
+                En Çok Satanlar
+              </h1>
+            </div>
             <p className="text-gray-600 text-lg max-w-2xl mx-auto">
               Algoritma destekli analiz ile belirlenen en popüler ürünler. Satış
               performansı, müşteri memnuniyeti ve trend analizi ile
@@ -287,17 +287,17 @@ export default function BestSellers() {
             className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 mb-8 shadow-lg border border-orange-100"
           >
             <div className="flex flex-wrap items-center justify-between gap-4">
-                {/* Search */}
+              {/* Search */}
               <div className="relative min-w-64">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="text"
+                <input
+                  type="text"
                   placeholder="Ürün veya satıcı ara..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent bg-white/50"
-                    />
-                  </div>
+                />
+              </div>
 
               {/* Filters Toggle */}
               <button
@@ -307,7 +307,7 @@ export default function BestSellers() {
                 <FunnelIcon className="w-5 h-5" />
                 Filtreler
               </button>
-                </div>
+            </div>
 
             {/* Extended Filters */}
             <AnimatePresence>
@@ -324,7 +324,7 @@ export default function BestSellers() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Sıralama Kriteri
                       </label>
-                    <select
+                      <select
                         value={sortMetric}
                         onChange={(e) => setSortMetric(e.target.value)}
                         className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -335,15 +335,15 @@ export default function BestSellers() {
                         </option>
                         <option value="trending_score">Trend Analizi</option>
                         <option value="revenue_score">Gelir Performansı</option>
-                    </select>
-                  </div>
+                      </select>
+                    </div>
 
                     {/* Time Range */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Zaman Aralığı
                       </label>
-                  <select
+                      <select
                         value={timeRange}
                         onChange={(e) => setTimeRange(e.target.value)}
                         className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -352,15 +352,15 @@ export default function BestSellers() {
                         <option value="30_days">Son 30 Gün</option>
                         <option value="90_days">Son 90 Gün</option>
                         <option value="all_time">Tüm Zamanlar</option>
-                  </select>
-                </div>
+                      </select>
+                    </div>
 
                     {/* Category Filter */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Kategori
                       </label>
-                  <select
+                      <select
                         value={activeFilter}
                         onChange={(e) => setActiveFilter(e.target.value)}
                         className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500"
@@ -371,9 +371,9 @@ export default function BestSellers() {
                             {category.name}
                           </option>
                         ))}
-                  </select>
-                </div>
-              </div>
+                      </select>
+                    </div>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -390,7 +390,7 @@ export default function BestSellers() {
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-xl">
                   <TrophyIcon className="w-6 h-6 text-white" />
-            </div>
+                </div>
                 <h2 className="text-2xl font-bold text-gray-900">
                   Şampiyonlar 🏆
                 </h2>
@@ -402,9 +402,9 @@ export default function BestSellers() {
               <Carousel
                 items={topTier}
                 renderItem={(product) => (
-                          <ProductCard
-                    key={product.id}
-                            product={product}
+                  <ProductCard
+                    key={product.uuid}
+                    product={product}
                     showPerformanceMetrics={true}
                     tier="champion"
                   />
@@ -434,18 +434,18 @@ export default function BestSellers() {
                 </div>
                 <h2 className="text-2xl font-bold text-gray-900">
                   Güçlü Performans 🚀
-                  </h2>
+                </h2>
                 <span className="text-sm text-gray-500">
                   Yüksek satış performansı gösteren ürünler
                 </span>
-                        </div>
+              </div>
 
               <Carousel
                 items={middleTier}
                 renderItem={(product) => (
-                        <ProductCard
-                    key={product.id}
-                          product={product}
+                  <ProductCard
+                    key={product.uuid}
+                    product={product}
                     showPerformanceMetrics={true}
                     tier="strong"
                   />
@@ -485,7 +485,7 @@ export default function BestSellers() {
                 items={emergingTier}
                 renderItem={(product) => (
                   <ProductCard
-                    key={product.id}
+                    key={product.uuid}
                     product={product}
                     showPerformanceMetrics={true}
                     tier="emerging"

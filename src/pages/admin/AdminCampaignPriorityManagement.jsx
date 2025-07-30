@@ -696,5 +696,3 @@ const AdminCampaignPriorityManagement = () => {
 };
 
 export default AdminCampaignPriorityManagement;
-
- 

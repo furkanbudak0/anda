@@ -13,7 +13,7 @@ import {
   useModerateReview,
   useDeleteReview,
 } from "../../hooks/useReviews";
-import NavBar from "../../components/NavBar";
+import AdminSidebar from "../AdminSidebar";
 import toast from "react-hot-toast";
 
 export default function AdminReviews() {
@@ -94,10 +94,9 @@ export default function AdminReviews() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="pt-32 pb-16">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 pt-16 pb-16">
         <div className="max-w-7xl mx-auto px-4">
           {/* Header */}
           <div className="mb-8">

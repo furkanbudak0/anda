@@ -13,7 +13,7 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 
-import NavBar from "../../components/NavBar";
+import AdminSidebar from "../AdminSidebar";
 import Spinner from "../../components/Spinner";
 
 const periodOptions = [
@@ -218,9 +218,9 @@ export default function AdminAnalytics() {
 
   if (isLoadingAnalytics || isLoadingStats) {
     return (
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <NavBar />
-        <div className="flex items-center justify-center h-96">
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+        <AdminSidebar />
+        <div className="flex-1 flex items-center justify-center h-96">
           <Spinner size="lg" />
         </div>
       </div>
@@ -228,10 +228,9 @@ export default function AdminAnalytics() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div>

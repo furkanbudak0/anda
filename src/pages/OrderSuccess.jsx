@@ -38,7 +38,7 @@ export default function OrderSuccess() {
           <h1 className="text-2xl font-bold text-gray-900 mb-4">
             Sipariş Bulunamadı
           </h1>
-          <Link to="/" className="text-purple-600 hover:text-purple-800">
+          <Link to="/" className="text-orange-600 hover:text-orange-800">
             Ana Sayfaya Dön
           </Link>
         </div>

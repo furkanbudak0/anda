@@ -5,6 +5,7 @@ import {
   useReducer,
   useMemo,
   useCallback,
+  useState,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getCurrentUser, logout as apiLogout } from "../services/apiAuth";
@@ -99,7 +100,7 @@ function authReducer(state, action) {
 }
 
 const initialState = {
-  status: AUTH_STATES.IDLE,
+  status: AUTH_STATES.LOADING, // Start with loading state
   user: null,
   profile: null,
   role: null,
@@ -115,17 +116,23 @@ const initialState = {
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
   const queryClient = useQueryClient();
+  const [jwtToken, setJwtToken] = useState(null);
 
   /**
    * Initialize authentication state on app start
    * Checks for existing session and validates JWT token
    */
   useEffect(() => {
+    let isMounted = true;
+
     async function initializeAuth() {
       try {
         dispatch({ type: "SET_LOADING" });
 
         const userData = await getCurrentUser();
+
+        // Check if component is still mounted
+        if (!isMounted) return;
 
         if (userData?.user) {
           const role = userData.user.user_metadata?.role || "user";
@@ -148,6 +155,8 @@ export function AuthProvider({ children }) {
           dispatch({ type: "SET_UNAUTHENTICATED" });
         }
       } catch (error) {
+        if (!isMounted) return;
+
         if (import.meta.env.DEV) {
           console.error("Auth initialization failed:", error);
         }
@@ -159,6 +168,11 @@ export function AuthProvider({ children }) {
     }
 
     initializeAuth();
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   /**
@@ -174,6 +188,7 @@ export function AuthProvider({ children }) {
       // Clear any stored tokens
       localStorage.removeItem("supabase.auth.token");
       sessionStorage.clear();
+      setJwtToken(null);
     } catch (error) {
       console.error("Logout failed:", error);
       // Force logout even if API call fails
@@ -283,6 +298,7 @@ export function AuthProvider({ children }) {
       isLoading: state.status === AUTH_STATES.LOADING,
       isAuthenticated: state.status === AUTH_STATES.AUTHENTICATED,
       isError: state.status === AUTH_STATES.ERROR,
+      jwtToken,
 
       // Methods
       logout,
@@ -304,6 +320,7 @@ export function AuthProvider({ children }) {
       isAuthorized,
       getDashboardRoute,
       refreshUser,
+      jwtToken,
     ]
   );
 

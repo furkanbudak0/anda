@@ -32,7 +32,6 @@ import {
   ArrowPathIcon,
 } from "@heroicons/react/24/solid";
 
-import NavBar from "../components/NavBar";
 import { Modal, ModalButton, FormModal } from "../components/ui";
 import Spinner from "../components/Spinner";
 
@@ -232,7 +231,6 @@ export default function SellerOrders() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <NavBar />
         <div className="flex items-center justify-center h-96">
           <Spinner size="lg" />
         </div>
@@ -242,8 +240,6 @@ export default function SellerOrders() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900">
-      <NavBar />
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Enhanced Header */}
         <div className="mb-8">

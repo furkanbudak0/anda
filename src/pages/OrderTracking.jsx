@@ -1,98 +1,30 @@
-import React, { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useSearchParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../services/supabase";
-import toast from "react-hot-toast";
+import { formatPrice, formatDate } from "../utils/formatters";
 import {
-  MagnifyingGlassIcon,
   TruckIcon,
+  MapPinIcon,
+  CalendarIcon,
   CheckCircleIcon,
   ClockIcon,
   ExclamationTriangleIcon,
-  MapPinIcon,
-  CalendarIcon,
 } from "@heroicons/react/24/outline";
 
-import NavBar from "../components/NavBar";
-import Spinner from "../components/Spinner";
-
-const statusConfig = {
-  pending: {
-    icon: ClockIcon,
-    color: "text-yellow-600 bg-yellow-100",
-    text: "Beklemede",
-    description: "Siparişiniz hazırlanıyor",
-  },
-  processing: {
-    icon: ClockIcon,
-    color: "text-blue-600 bg-blue-100",
-    text: "Hazırlanıyor",
-    description: "Siparişiniz hazırlanıyor",
-  },
-  shipped: {
-    icon: TruckIcon,
-    color: "text-purple-600 bg-purple-100",
-    text: "Kargoya Verildi",
-    description: "Siparişiniz kargo firmasına teslim edildi",
-  },
-  in_transit: {
-    icon: TruckIcon,
-    color: "text-indigo-600 bg-indigo-100",
-    text: "Yolda",
-    description: "Siparişiniz size doğru yolda",
-  },
-  out_for_delivery: {
-    icon: TruckIcon,
-    color: "text-orange-600 bg-orange-100",
-    text: "Dağıtımda",
-    description: "Siparişiniz teslimat için çıktı",
-  },
-  delivered: {
-    icon: CheckCircleIcon,
-    color: "text-green-600 bg-green-100",
-    text: "Teslim Edildi",
-    description: "Siparişiniz başarıyla teslim edildi",
-  },
-  failed_delivery: {
-    icon: ExclamationTriangleIcon,
-    color: "text-red-600 bg-red-100",
-    text: "Teslimat Başarısız",
-    description: "Teslimat gerçekleştirilemedi",
-  },
-  returned: {
-    icon: ExclamationTriangleIcon,
-    color: "text-gray-600 bg-gray-100",
-    text: "İade Edildi",
-    description: "Sipariş geri gönderildi",
-  },
-  cancelled: {
-    icon: ExclamationTriangleIcon,
-    color: "text-red-600 bg-red-100",
-    text: "İptal Edildi",
-    description: "Sipariş iptal edildi",
-  },
-};
-
 export default function OrderTracking() {
-  const { trackingCode } = useParams();
-  const navigate = useNavigate();
-  const [inputTrackingCode, setInputTrackingCode] = useState(
-    trackingCode || ""
-  );
-  const [searchAttempted, setSearchAttempted] = useState(!!trackingCode);
+  const { orderId } = useParams();
+  const [searchParams] = useSearchParams();
+  const sellerId = searchParams.get("seller");
 
   const {
-    data: trackingData,
+    data: order,
     isLoading,
     error,
-    refetch,
   } = useQuery({
-    queryKey: ["order-tracking", trackingCode],
+    queryKey: ["order-tracking", orderId, sellerId],
     queryFn: async () => {
-      if (!trackingCode) return null;
-
-      const { data, error } = await supabase
-        .from("public_order_tracking")
+      let query = supabase
+        .from("order_items")
         .select(
           `
           *,
@@ -100,375 +32,365 @@ export default function OrderTracking() {
             id,
             order_number,
             total_amount,
+            status,
             created_at,
             shipping_address,
-            order_items(
+            billing_address
+          ),
+          product:products(
+            name,
+            image_url,
+            uuid,
+            seller:sellers(
               id,
-              quantity,
-              price,
-              product:products(name, image_url),
-              variant:product_variants(title)
+              business_name,
+              business_slug,
+              logo_url
             )
           )
         `
         )
-        .eq("tracking_code", trackingCode)
-        .single();
+        .eq("order_id", orderId);
 
-      if (error) {
-        if (error.code === "PGRST116") {
-          throw new Error("Takip kodu bulunamadı");
-        }
-        throw new Error(error.message);
+      if (sellerId) {
+        query = query.eq("seller_id", sellerId);
       }
 
-      return data;
+      const { data, error } = await query;
+
+      if (error) throw error;
+      return data || [];
     },
-    enabled: !!trackingCode && searchAttempted,
-    retry: false,
+    enabled: !!orderId,
   });
 
-  const handleSearch = (e) => {
-    e.preventDefault();
-    if (!inputTrackingCode.trim()) {
-      toast.error("Lütfen takip kodu giriniz");
-      return;
-    }
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="animate-pulse">
+            <div className="h-8 bg-gray-200 rounded w-1/3 mb-6"></div>
+            <div className="space-y-4">
+              <div className="h-4 bg-gray-200 rounded w-full"></div>
+              <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+              <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
-    setSearchAttempted(true);
-    if (inputTrackingCode !== trackingCode) {
-      navigate(`/track/${inputTrackingCode}`);
-    } else {
-      refetch();
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="text-center">
+            <ExclamationTriangleIcon className="w-12 h-12 text-red-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Kargo Takip Bilgisi Bulunamadı
+            </h1>
+            <p className="text-gray-600 mb-6">
+              Aradığınız kargo takip bilgisi bulunamadı.
+            </p>
+            <Link
+              to="/orders"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Siparişlerime Dön
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!order || order.length === 0) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="text-center">
+            <TruckIcon className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">
+              Kargo Takip Bilgisi Yok
+            </h1>
+            <p className="text-gray-600 mb-6">
+              Bu sipariş için henüz kargo takip bilgisi girilmemiş.
+            </p>
+            <Link
+              to="/orders"
+              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Siparişlerime Dön
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case "delivered":
+        return <CheckCircleIcon className="w-6 h-6 text-green-500" />;
+      case "shipped":
+      case "in_transit":
+      case "out_for_delivery":
+        return <TruckIcon className="w-6 h-6 text-blue-500" />;
+      case "processing":
+        return <ClockIcon className="w-6 h-6 text-yellow-500" />;
+      default:
+        return <ClockIcon className="w-6 h-6 text-gray-500" />;
     }
   };
 
-  const currentStatus = trackingData?.current_status;
-  const statusInfo = statusConfig[currentStatus] || statusConfig.pending;
-  const StatusIcon = statusInfo.icon;
-
-  const parseStatusHistory = (historyJson) => {
-    try {
-      return Array.isArray(historyJson)
-        ? historyJson
-        : JSON.parse(historyJson || "[]");
-    } catch {
-      return [];
+  const getStatusColor = (status) => {
+    switch (status) {
+      case "delivered":
+        return "bg-green-100 text-green-800";
+      case "shipped":
+      case "in_transit":
+      case "out_for_delivery":
+        return "bg-blue-100 text-blue-800";
+      case "processing":
+        return "bg-yellow-100 text-yellow-800";
+      default:
+        return "bg-gray-100 text-gray-800";
     }
   };
 
-  const statusHistory = trackingData
-    ? parseStatusHistory(trackingData.public_status_history)
-    : [];
+  const getStatusText = (status) => {
+    const statusTexts = {
+      pending: "Sipariş Alındı",
+      processing: "Hazırlanıyor",
+      shipped: "Kargoya Verildi",
+      in_transit: "Yolda",
+      out_for_delivery: "Dağıtımda",
+      delivered: "Teslim Edildi",
+      failed: "Teslim Edilemedi",
+      returned: "İade Edildi",
+    };
+    return statusTexts[status] || status;
+  };
+
+  // Satıcıya göre grupla
+  const groupBySeller = () => {
+    const groups = {};
+    order.forEach((item) => {
+      const sellerId = item.product?.seller?.id;
+      if (!groups[sellerId]) {
+        groups[sellerId] = {
+          seller: item.product?.seller,
+          items: [],
+        };
+      }
+      groups[sellerId].items.push(item);
+    });
+    return Object.values(groups);
+  };
+
+  const sellerGroups = groupBySeller();
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-4xl mx-auto px-4">
         {/* Header */}
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Sipariş Takibi
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Sipariş takip kodunuzla siparişinizin durumunu öğrenin
-          </p>
-        </div>
-
-        {/* Search Form */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-8">
-          <form onSubmit={handleSearch} className="flex gap-4">
-            <div className="flex-1">
-              <label htmlFor="tracking-code" className="sr-only">
-                Takip Kodu
-              </label>
-              <input
-                id="tracking-code"
-                type="text"
-                value={inputTrackingCode}
-                onChange={(e) => setInputTrackingCode(e.target.value)}
-                placeholder="Takip kodunuzu giriniz (örn: TR20241201ABCD1234)"
-                className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg 
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                         dark:bg-gray-700 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
-              />
+        <div className="mb-8">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Kargo Takibi</h1>
+              <p className="text-gray-600 mt-2">
+                Sipariş #{order[0]?.order?.order_number || orderId?.slice(0, 8)}
+              </p>
             </div>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg
-                       focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2
-                       disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            <Link
+              to="/orders"
+              className="inline-flex items-center px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
             >
-              {isLoading ? (
-                <Spinner size="sm" />
-              ) : (
-                <MagnifyingGlassIcon className="h-5 w-5" />
-              )}
-              Sorgula
-            </button>
-          </form>
+              ← Siparişlerime Dön
+            </Link>
+          </div>
         </div>
 
-        {/* Results */}
-        {searchAttempted && (
-          <>
-            {error && (
-              <div className="bg-red-50 dark:bg-red-900/50 border border-red-200 dark:border-red-800 rounded-lg p-6 mb-8">
-                <div className="flex items-center gap-3">
-                  <ExclamationTriangleIcon className="h-6 w-6 text-red-600 dark:text-red-400" />
-                  <div>
-                    <h3 className="text-lg font-medium text-red-800 dark:text-red-200">
-                      Sipariş Bulunamadı
-                    </h3>
-                    <p className="text-red-700 dark:text-red-300 mt-1">
-                      {error.message}
-                    </p>
-                  </div>
+        {/* Kargo Takip Bilgileri */}
+        <div className="space-y-6">
+          {sellerGroups.map((group, index) => (
+            <div
+              key={index}
+              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6"
+            >
+              {/* Satıcı Başlığı */}
+              <div className="flex items-center gap-3 mb-6 pb-4 border-b border-gray-200">
+                {group.seller?.logo_url && (
+                  <img
+                    src={group.seller.logo_url}
+                    alt={group.seller.business_name}
+                    className="w-12 h-12 rounded-full object-cover"
+                  />
+                )}
+                <div>
+                  <h2 className="text-xl font-bold text-gray-900">
+                    {group.seller?.business_name}
+                  </h2>
+                  <p className="text-sm text-gray-600">
+                    {group.items.length} ürün
+                  </p>
                 </div>
               </div>
-            )}
 
-            {trackingData && (
-              <div className="space-y-6">
-                {/* Order Summary */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-                  <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                    <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      Sipariş Detayları
-                    </h2>
-                  </div>
-                  <div className="p-6">
-                    <div className="grid md:grid-cols-2 gap-6">
-                      <div>
-                        <dl className="space-y-3">
-                          <div>
-                            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                              Sipariş Numarası
-                            </dt>
-                            <dd className="text-sm text-gray-900 dark:text-white font-mono">
-                              {trackingData.order.order_number}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                              Takip Kodu
-                            </dt>
-                            <dd className="text-sm text-gray-900 dark:text-white font-mono">
-                              {trackingData.tracking_code}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                              Sipariş Tarihi
-                            </dt>
-                            <dd className="text-sm text-gray-900 dark:text-white">
-                              {new Date(
-                                trackingData.order.created_at
-                              ).toLocaleDateString("tr-TR", {
-                                year: "numeric",
-                                month: "long",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
-                            </dd>
-                          </div>
-                        </dl>
+              {/* Ürünler */}
+              <div className="space-y-4">
+                {group.items.map((item) => (
+                  <div key={item.id} className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-4">
+                        <img
+                          src={
+                            item.product?.image_url ||
+                            "/placeholder-product.jpg"
+                          }
+                          alt={item.product?.name}
+                          className="w-16 h-16 object-cover rounded-lg"
+                        />
+                        <div>
+                          <h3 className="font-medium text-gray-900">
+                            {item.product?.name}
+                          </h3>
+                          <p className="text-sm text-gray-600">
+                            Adet: {item.quantity} • {formatPrice(item.total)}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <dl className="space-y-3">
-                          <div>
-                            <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                              Toplam Tutar
-                            </dt>
-                            <dd className="text-sm text-gray-900 dark:text-white font-semibold">
-                              ₺{trackingData.order.total_amount.toFixed(2)}
-                            </dd>
-                          </div>
-                          {trackingData.estimated_delivery && (
-                            <div>
-                              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                Tahmini Teslimat
-                              </dt>
-                              <dd className="text-sm text-gray-900 dark:text-white flex items-center gap-1">
-                                <CalendarIcon className="h-4 w-4" />
-                                {new Date(
-                                  trackingData.estimated_delivery
-                                ).toLocaleDateString("tr-TR", {
-                                  year: "numeric",
-                                  month: "long",
-                                  day: "numeric",
-                                })}
-                              </dd>
-                            </div>
-                          )}
-                          {trackingData.order.shipping_address && (
-                            <div>
-                              <dt className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                                Teslimat Adresi
-                              </dt>
-                              <dd className="text-sm text-gray-900 dark:text-white flex items-start gap-1">
-                                <MapPinIcon className="h-4 w-4 mt-0.5 flex-shrink-0" />
-                                <span>
-                                  {typeof trackingData.order
-                                    .shipping_address === "string"
-                                    ? trackingData.order.shipping_address
-                                    : `${trackingData.order.shipping_address.address}, ${trackingData.order.shipping_address.city}`}
-                                </span>
-                              </dd>
-                            </div>
-                          )}
-                        </dl>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Current Status */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className={`p-3 rounded-full ${statusInfo.color}`}>
-                      <StatusIcon className="h-6 w-6" />
-                    </div>
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {statusInfo.text}
-                      </h3>
-                      <p className="text-gray-600 dark:text-gray-400">
-                        {trackingData.status_description ||
-                          statusInfo.description}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Status History */}
-                {statusHistory.length > 0 && (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-                    <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        Sipariş Geçmişi
-                      </h3>
-                    </div>
-                    <div className="p-6">
-                      <div className="flow-root">
-                        <ul className="-mb-8">
-                          {statusHistory.map((status, index) => {
-                            const historyStatusInfo =
-                              statusConfig[status.status] ||
-                              statusConfig.pending;
-                            const HistoryIcon = historyStatusInfo.icon;
-
-                            return (
-                              <li key={index}>
-                                <div className="relative pb-8">
-                                  {index !== statusHistory.length - 1 && (
-                                    <span className="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200 dark:bg-gray-600" />
-                                  )}
-                                  <div className="relative flex space-x-3">
-                                    <div>
-                                      <span
-                                        className={`h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white dark:ring-gray-800 ${historyStatusInfo.color}`}
-                                      >
-                                        <HistoryIcon className="h-4 w-4" />
-                                      </span>
-                                    </div>
-                                    <div className="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
-                                      <div>
-                                        <p className="text-sm text-gray-900 dark:text-white font-medium">
-                                          {historyStatusInfo.text}
-                                        </p>
-                                        {status.description && (
-                                          <p className="text-sm text-gray-600 dark:text-gray-400">
-                                            {status.description}
-                                          </p>
-                                        )}
-                                        {status.location && (
-                                          <p className="text-xs text-gray-500 dark:text-gray-500 flex items-center gap-1 mt-1">
-                                            <MapPinIcon className="h-3 w-3" />
-                                            {status.location}
-                                          </p>
-                                        )}
-                                      </div>
-                                      <div className="text-right text-sm whitespace-nowrap text-gray-500 dark:text-gray-400">
-                                        <time dateTime={status.timestamp}>
-                                          {new Date(
-                                            status.timestamp
-                                          ).toLocaleDateString("tr-TR", {
-                                            month: "short",
-                                            day: "numeric",
-                                            hour: "2-digit",
-                                            minute: "2-digit",
-                                          })}
-                                        </time>
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Order Items */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
-                  <div className="px-6 py-4 bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                      Sipariş İçeriği
-                    </h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="space-y-4">
-                      {trackingData.order.order_items.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center gap-4 p-4 border border-gray-200 dark:border-gray-600 rounded-lg"
+                      <div className="text-right">
+                        <span
+                          className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+                            item.status
+                          )}`}
                         >
-                          <div className="flex-shrink-0">
-                            <img
-                              src={
-                                item.product.image_url?.[0] ||
-                                "/placeholder-product.jpg"
-                              }
-                              alt={item.product.name}
-                              className="h-16 w-16 object-cover rounded-lg"
-                            />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                              {item.product.name}
+                          {getStatusIcon(item.status)}
+                          {getStatusText(item.status)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Kargo Bilgileri */}
+                    {item.tracking_number && (
+                      <div className="bg-white rounded-lg p-4 border border-gray-200">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-2">
+                              Kargo Bilgileri
                             </h4>
-                            {item.variant?.title && (
-                              <p className="text-sm text-gray-600 dark:text-gray-400">
-                                {item.variant.title}
+                            <div className="space-y-2 text-sm">
+                              <p>
+                                <span className="font-medium">Takip No:</span>{" "}
+                                <span className="font-mono">
+                                  {item.tracking_number}
+                                </span>
                               </p>
-                            )}
-                            <p className="text-sm text-gray-500 dark:text-gray-500">
-                              Adet: {item.quantity}
-                            </p>
+                              {item.shipping_company && (
+                                <p>
+                                  <span className="font-medium">Kargo:</span>{" "}
+                                  {item.shipping_company}
+                                </p>
+                              )}
+                              {item.current_location && (
+                                <p>
+                                  <span className="font-medium">Konum:</span>{" "}
+                                  {item.current_location}
+                                </p>
+                              )}
+                            </div>
                           </div>
-                          <div className="text-right">
-                            <p className="text-sm font-medium text-gray-900 dark:text-white">
-                              ₺{(item.price * item.quantity).toFixed(2)}
-                            </p>
-                            <p className="text-xs text-gray-500 dark:text-gray-500">
-                              ₺{item.price.toFixed(2)} / adet
-                            </p>
+                          <div>
+                            <h4 className="font-medium text-gray-900 mb-2">
+                              Tahmini Teslimat
+                            </h4>
+                            <div className="space-y-2 text-sm">
+                              {item.estimated_delivery && (
+                                <p className="flex items-center gap-2">
+                                  <CalendarIcon className="w-4 h-4" />
+                                  {new Date(
+                                    item.estimated_delivery
+                                  ).toLocaleDateString("tr-TR")}
+                                </p>
+                              )}
+                              {item.notes && (
+                                <p className="text-gray-600">
+                                  <span className="font-medium">Not:</span>{" "}
+                                  {item.notes}
+                                </p>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    )}
+
+                    {/* Kargo Takip Detayları */}
+                    {item.shipping_tracking_details &&
+                      item.shipping_tracking_details.length > 0 && (
+                        <div className="mt-4">
+                          <h4 className="font-medium text-gray-900 mb-3">
+                            Kargo Takip Geçmişi
+                          </h4>
+                          <div className="space-y-3">
+                            {item.shipping_tracking_details.map(
+                              (detail, detailIndex) => (
+                                <div
+                                  key={detailIndex}
+                                  className="flex items-start gap-3 p-3 bg-white rounded-lg border border-gray-200"
+                                >
+                                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2"></div>
+                                  <div className="flex-1">
+                                    <p className="font-medium text-gray-900">
+                                      {detail.status}
+                                    </p>
+                                    {detail.location && (
+                                      <p className="text-sm text-gray-600">
+                                        <MapPinIcon className="w-4 h-4 inline mr-1" />
+                                        {detail.location}
+                                      </p>
+                                    )}
+                                    {detail.description && (
+                                      <p className="text-sm text-gray-500 mt-1">
+                                        {detail.description}
+                                      </p>
+                                    )}
+                                    <p className="text-xs text-gray-400 mt-1">
+                                      {new Date(
+                                        detail.created_at
+                                      ).toLocaleString("tr-TR")}
+                                    </p>
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
                   </div>
-                </div>
+                ))}
               </div>
-            )}
-          </>
+            </div>
+          ))}
+        </div>
+
+        {/* Teslimat Adresi */}
+        {order[0]?.order?.shipping_address && (
+          <div className="mt-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <MapPinIcon className="w-5 h-5 text-green-600" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900">
+                Teslimat Adresi
+              </h2>
+            </div>
+            <div className="text-gray-700">
+              <p>{order[0].order.shipping_address}</p>
+            </div>
+          </div>
         )}
       </div>
     </div>

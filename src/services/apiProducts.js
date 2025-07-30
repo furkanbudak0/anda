@@ -51,30 +51,18 @@ export const apiProducts = {
         seller:sellers(
           id,
           business_name,
-          business_slug,
           logo_url,
-          rating
+          average_rating,
+          total_reviews
         ),
         category:categories(
           id,
           name,
           slug
-        ),
-        variants:product_variants(
-          id,
-          title,
-          price,
-          quantity,
-          option1,
-          option2,
-          option3,
-          image_url
         )
       `
       )
-      .eq("status", status)
-      .range(offset, offset + limit - 1)
-      .order(sortBy, { ascending: sortOrder === "asc" });
+      .eq("status", "active");
 
     // Apply filters
     if (categoryId) query = query.eq("category_id", categoryId);
@@ -93,12 +81,45 @@ export const apiProducts = {
       query = query.overlaps("tags", tags);
     }
 
+    // Apply pagination and sorting
+    query = query
+      .range(offset, offset + limit - 1)
+      .order(sortBy, { ascending: sortOrder === "asc" });
+
     const { data: products, error, count } = await query;
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("Error fetching products:", error);
+      throw new Error(error.message);
+    }
+
+    // Sepet sayılarını al
+    const productIds = products?.map((p) => p.uuid) || [];
+    let cartCounts = {};
+
+    if (productIds.length > 0) {
+      const { data: cartData, error: cartError } = await supabase
+        .from("cart_items")
+        .select("product_id, quantity")
+        .in("product_id", productIds);
+
+      if (!cartError && cartData) {
+        cartCounts = cartData.reduce((acc, item) => {
+          acc[item.product_id] = (acc[item.product_id] || 0) + item.quantity;
+          return acc;
+        }, {});
+      }
+    }
+
+    // Ürünlere sepet sayısını ekle
+    const productsWithCartCount =
+      products?.map((product) => ({
+        ...product,
+        cart_count: cartCounts[product.uuid] || 0,
+      })) || [];
 
     return {
-      products: products || [],
+      products: productsWithCartCount,
       total: count || 0,
       hasMore: offset + limit < (count || 0),
     };
@@ -107,12 +128,14 @@ export const apiProducts = {
   /**
    * Get a single product by ID or slug
    */
-  async getProduct(identifier) {
-    const isUUID =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-        identifier
-      );
-
+  async getProduct(productUuid) {
+    if (
+      !productUuid ||
+      typeof productUuid !== "string" ||
+      productUuid.length !== 36
+    ) {
+      throw new Error("Geçersiz ürün uuid'si");
+    }
     let query = supabase
       .from("products")
       .select(
@@ -121,60 +144,29 @@ export const apiProducts = {
         seller:sellers(
           id,
           business_name,
-          business_slug,
           logo_url,
-          banner_url,
-          rating,
+          cover_image_url,
+          average_rating,
           total_reviews,
-          description
+          business_description
         ),
         category:categories(
           id,
           name,
           slug,
           parent_id
-        ),
-        variants:product_variants(
-          id,
-          title,
-          sku,
-          price,
-          compare_at_price,
-          quantity,
-          option1,
-          option2,
-          option3,
-          image_url,
-          is_active
-        ),
-        reviews:reviews(
-          id,
-          rating,
-          title,
-          content,
-          images,
-          user:profiles(full_name, avatar),
-          created_at
         )
       `
       )
+      .eq("uuid", productUuid)
       .single();
-
-    if (isUUID) {
-      query = query.eq("id", identifier);
-    } else {
-      query = query.eq("slug", identifier);
-    }
-
     const { data: product, error } = await query;
-
     if (error) {
       if (error.code === "PGRST116") {
         throw new Error("Product not found");
       }
       throw new Error(error.message);
     }
-
     return product;
   },
 
@@ -248,19 +240,35 @@ export const apiProducts = {
   async getProductsByCategory(categorySlug, options = {}) {
     const { limit = 20, offset = 0 } = options;
 
-    const { data: products, error } = await supabase
+    // First try join on categories
+    let { data: products, error } = await supabase
       .from("products")
       .select(
         `
         *,
         seller:sellers(business_name, logo_url),
-        category:categories!inner(id, name, slug)
+        category:categories(id, name, slug)
       `
       )
       .eq("status", "active")
       .eq("category.slug", categorySlug)
       .range(offset, offset + limit - 1)
       .order("created_at", { ascending: false });
+
+    // If no products found, fallback to category_slug column
+    if ((!products || products.length === 0) && !error) {
+      const fallback = await supabase
+        .from("products")
+        .select(
+          `*, seller:sellers(business_name, logo_url), category_id, category, category_slug`
+        )
+        .eq("status", "active")
+        .eq("category_slug", categorySlug)
+        .range(offset, offset + limit - 1)
+        .order("created_at", { ascending: false });
+      products = fallback.data;
+      error = fallback.error;
+    }
 
     if (error) throw new Error(error.message);
     return products || [];
@@ -281,7 +289,7 @@ export const apiProducts = {
         category:categories(name, slug)
       `
       )
-      .eq("status", "active")
+      .eq("status", "published")
       .textSearch("name", searchTerm)
       .range(offset, offset + limit - 1);
 
@@ -298,11 +306,11 @@ export const apiProducts = {
   /**
    * Get related products
    */
-  async getRelatedProducts(productId, limit = 4) {
+  async getRelatedProducts(productUuid, limit = 4) {
     const { data: currentProduct } = await supabase
       .from("products")
       .select("category_id, tags")
-      .eq("id", productId)
+      .eq("uuid", productUuid)
       .single();
 
     if (!currentProduct) return [];
@@ -316,9 +324,9 @@ export const apiProducts = {
         category:categories(name, slug)
       `
       )
-      .eq("status", "active")
+      .eq("status", "published")
       .eq("category_id", currentProduct.category_id)
-      .neq("id", productId)
+      .neq("uuid", productUuid)
       .limit(limit);
 
     if (error) throw new Error(error.message);
@@ -369,11 +377,11 @@ export const apiProducts = {
   /**
    * Update a product (seller only)
    */
-  async updateProduct(productId, updates) {
+  async updateProduct(productUuid, updates) {
     const { data: product, error } = await supabase
       .from("products")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq("id", productId)
+      .eq("uuid", productUuid)
       .select()
       .single();
 
@@ -384,11 +392,11 @@ export const apiProducts = {
   /**
    * Delete a product (seller only)
    */
-  async deleteProduct(productId) {
+  async deleteProduct(productUuid) {
     const { error } = await supabase
       .from("products")
       .delete()
-      .eq("id", productId);
+      .eq("uuid", productUuid);
 
     if (error) throw new Error(error.message);
     return { success: true };
@@ -397,9 +405,9 @@ export const apiProducts = {
   /**
    * Track product view
    */
-  async trackProductView(productId, userId = null, sessionId = null) {
+  async trackProductView(productUuid, userId = null, sessionId = null) {
     const { error } = await supabase.from("view_history").insert({
-      product_id: productId,
+      product_id: productUuid,
       user_id: userId,
       session_id: sessionId,
       viewed_at: new Date().toISOString(),
@@ -416,11 +424,11 @@ export const apiProducts = {
   /**
    * Bulk update products
    */
-  async bulkUpdateProducts(productIds, updates) {
+  async bulkUpdateProducts(productUuids, updates) {
     const { data: products, error } = await supabase
       .from("products")
       .update({ ...updates, updated_at: new Date().toISOString() })
-      .in("id", productIds)
+      .in("uuid", productUuids)
       .select();
 
     if (error) throw new Error(error.message);
@@ -430,14 +438,14 @@ export const apiProducts = {
   /**
    * Get product analytics for seller
    */
-  async getProductAnalytics(productId, dateRange = "30d") {
+  async getProductAnalytics(productUuid, dateRange = "30d") {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - parseInt(dateRange));
 
     const { data: analytics, error } = await supabase
       .from("view_history")
       .select("viewed_at")
-      .eq("product_id", productId)
+      .eq("product_id", productUuid)
       .gte("viewed_at", startDate.toISOString());
 
     if (error) throw new Error(error.message);
@@ -462,7 +470,7 @@ export const apiProducts = {
    * Get product reviews
    */
   async getProductReviews(
-    productId,
+    productUuid,
     { limit = 10, offset = 0, status = "approved" } = {}
   ) {
     const { data: reviews, error } = await supabase
@@ -473,70 +481,13 @@ export const apiProducts = {
         user:profiles(full_name, avatar)
       `
       )
-      .eq("product_id", productId)
+      .eq("product_id", productUuid)
       .eq("status", status)
       .range(offset, offset + limit - 1)
       .order("created_at", { ascending: false });
 
     if (error) throw new Error(error.message);
     return reviews || [];
-  },
-
-  /**
-   * Add product to favorites/wishlist
-   */
-  async addToWishlist(productId, variantId = null) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) throw new Error("Authentication required");
-
-    // Get default wishlist
-    const { data: wishlists } = await supabase
-      .from("wishlists")
-      .select("id")
-      .eq("user_id", user.id)
-      .limit(1);
-
-    const wishlistId = wishlists?.[0]?.id;
-    if (!wishlistId) throw new Error("No wishlist found");
-
-    const { data: item, error } = await supabase
-      .from("wishlist_items")
-      .insert({
-        wishlist_id: wishlistId,
-        product_id: productId,
-        variant_id: variantId,
-      })
-      .select()
-      .single();
-
-    if (error) throw new Error(error.message);
-    return item;
-  },
-
-  /**
-   * Remove product from favorites/wishlist
-   */
-  async removeFromWishlist(productId, variantId = null) {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) throw new Error("Authentication required");
-
-    let query = supabase
-      .from("wishlist_items")
-      .delete()
-      .eq("product_id", productId);
-
-    if (variantId) {
-      query = query.eq("variant_id", variantId);
-    }
-
-    const { error } = await query;
-
-    if (error) throw new Error(error.message);
-    return { success: true };
   },
 };
 
@@ -547,20 +498,30 @@ export async function createEditProduct(newProduct, id) {
 
   validateProductData(newProduct);
 
-  const [thumbnailUrl, otherImageUrls] = await Promise.all([
+  // Satıcı kimliği zorunlu
+  if (!user.seller_id) throw new Error("Sadece satıcılar ürün ekleyebilir");
+
+  await Promise.all([
     uploadThumbnail(newProduct.thumbnail, user.id),
     uploadOtherImages(newProduct.otherImages, user.id),
   ]);
 
   const productData = {
-    ...newProduct,
-    user_id: user.id,
-    thumbnail: thumbnailUrl,
-    otherImages:
-      otherImageUrls.length > 0 ? JSON.stringify(otherImageUrls) : null,
-    regularPrice: Number(newProduct.regularPrice),
-    discount: Number(newProduct.discount || 0),
-    availableStock: Number(newProduct.availableStock || 0),
+    name: newProduct.name,
+    description: newProduct.description,
+    price: parseFloat(newProduct.regularPrice),
+    discounted_price: newProduct.discounted_price
+      ? parseFloat(newProduct.discounted_price)
+      : null,
+    stock_quantity: parseInt(newProduct.stock_quantity),
+    category_id: newProduct.category_id,
+    images: Array.isArray(newProduct.images) ? newProduct.images : [],
+    brand: newProduct.brand,
+    tags: Array.isArray(newProduct.tags) ? newProduct.tags : [],
+    status: "active",
+    delivery_time: newProduct.delivery_time || null,
+    free_shipping: !!newProduct.free_shipping,
+    // diğer opsiyonel alanlar
   };
 
   let query;
@@ -569,14 +530,18 @@ export async function createEditProduct(newProduct, id) {
   } else {
     const { data: existing } = await supabase
       .from("products")
-      .select("user_id")
-      .eq("id", id)
+      .select("user_id, seller_id")
+      .eq("uuid", id)
       .single();
 
-    if (!existing || existing.user_id !== user.id)
+    if (
+      !existing ||
+      existing.user_id !== user.id ||
+      existing.seller_id !== user.seller_id
+    )
       throw new Error("Bu işlem için yetkiniz yok");
 
-    query = supabase.from("products").update(productData).eq("id", id);
+    query = supabase.from("products").update(productData).eq("uuid", id);
   }
 
   const { data, error } = await query.select().single();
@@ -592,31 +557,31 @@ export async function deleteProduct(id) {
 
   const { data: product, error: fetchError } = await supabase
     .from("products")
-    .select("user_id, thumbnail, otherImages")
-    .eq("id", id)
+    .select("user_id, seller_id, thumbnail, otherImages")
+    .eq("uuid", id)
     .single();
 
   if (fetchError) throw new Error("Ürün bulunamadı");
-  if (product.user_id !== user.id)
+  if (product.user_id !== user.id || product.seller_id !== user.seller_id)
     throw new Error("Bu işlem için yetkiniz yok");
 
   await deleteProductImages(product);
 
-  const { error } = await supabase.from("products").delete().eq("id", id);
+  const { error } = await supabase.from("products").delete().eq("uuid", id);
   if (error) throw new Error("Silme hatası: " + error.message);
 
   return true;
 }
 
 // 🔁 Toplu durum güncelle
-export async function bulkUpdateProductStatus({ productIds, status }) {
+export async function bulkUpdateProductStatus({ productUuids, status }) {
   const user = await getCurrentUser();
   if (!user) throw new Error("Giriş yapılmamış");
 
   const { error } = await supabase
     .from("products")
     .update({ status })
-    .in("id", productIds)
+    .in("uuid", productUuids)
     .eq("user_id", user.id);
 
   if (error) throw new Error("Toplu işlem hatası: " + error.message);
@@ -713,3 +678,13 @@ export const getProduct = apiProducts.getProduct;
 export const getFeaturedProducts = apiProducts.getFeaturedProducts;
 export const getBestSellers = apiProducts.getBestSellers;
 export const getNewArrivals = apiProducts.getNewArrivals;
+
+export async function getSellerById(sellerId) {
+  const { data, error } = await supabase
+    .from("sellers")
+    .select("*", { count: "exact" })
+    .eq("id", sellerId)
+    .single();
+  if (error) throw new Error(error.message);
+  return data;
+}

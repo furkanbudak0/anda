@@ -1,52 +1,28 @@
-import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
-import { apiProducts } from "../services/apiProducts";
-import { supabase } from "../services/supabase";
-import {
-  useFeaturedProducts,
-  useNewArrivals,
-  useBestSellers,
-} from "../hooks/useProducts";
-import NavBar from "../components/NavBar";
-import { HomepageSEO } from "../components/SEO";
-import ProductCard from "../components/ProductCard";
-import RecentlyViewedProducts from "../components/RecentlyViewedProducts";
-import Spinner from "../components/Spinner";
-import { useLocation, Link } from "react-router-dom";
-import { useInView } from "react-intersection-observer";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { useInView } from "react-intersection-observer";
+import { useQuery, useInfiniteQuery } from "@tanstack/react-query";
+import { supabase } from "../services/supabase";
+import ProductCarousel from "../components/ProductCarousel";
+import RecentlyViewedProducts from "../components/RecentlyViewedProducts";
+import HomepageSEO from "../components/SEO";
+import { useBestSellers } from "../hooks/useProducts";
 import {
-  ArrowRightIcon,
-  SparklesIcon,
-  FireIcon,
-  ClockIcon,
-  TagIcon,
   ArrowTrendingUpIcon,
-  GiftIcon,
   ShoppingBagIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  UserGroupIcon,
+  ArrowRightIcon,
   BuildingStorefrontIcon,
+  UserGroupIcon,
   HeartIcon,
-  StarIcon,
 } from "@heroicons/react/24/outline";
-import { useAuth } from "../contexts/AuthContext";
-import {
-  useAlgorithmProducts,
-  useAlgorithmSellers,
-  useTrendingProducts,
-  usePersonalizedRecommendations,
-} from "../hooks/useAnalytics";
 
 const Homepage = () => {
   const location = useLocation();
   const message = location.state?.message;
   const [currentCampaignIndex, setCampaignIndex] = useState(0);
-  const { user } = useAuth();
-  const [activeCategory, setActiveCategory] = useState("all");
   const [isAtBottom, setIsAtBottom] = useState(false);
-  const scrollContainerRef = useRef();
+  const [selectedSubcategory, setSelectedSubcategory] = useState("all");
 
   // Intersection observer for infinite scroll
   const { ref: infiniteRef, inView } = useInView({
@@ -55,63 +31,135 @@ const Homepage = () => {
   });
 
   // Fetch different product sections
-  const { data: featuredProducts, isLoading: featuredLoading } =
-    useFeaturedProducts(8);
-  const { data: newProducts, isLoading: newLoading } = useNewArrivals(8);
-  const { data: bestSellers, isLoading: bestLoading } = useBestSellers(8);
+  const {
+    data: bestSellers,
+    isLoading: bestSellersLoading,
+    error: bestSellersError,
+  } = useBestSellers(8);
 
-  // Fetch campaigns
+  // Fetch campaigns with priority order
   const { data: campaigns } = useQuery({
     queryKey: ["admin-campaigns"],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("admin_campaigns")
-        .select("*")
-        .eq("is_active", true)
-        .eq("show_on_homepage", true)
-        .lte("start_date", new Date().toISOString())
-        .gte("end_date", new Date().toISOString())
-        .order("display_order");
+      try {
+        const { data, error } = await supabase
+          .from("admin_campaigns")
+          .select("*")
+          .eq("is_active", true)
+          .lte("start_date", new Date().toISOString())
+          .gte("end_date", new Date().toISOString())
+          .order("priority_order", { ascending: true });
 
-      if (error) throw error;
-      return data || [];
+        if (error) {
+          console.log("Campaigns error:", error);
+          return [];
+        }
+        return data || [];
+      } catch (error) {
+        console.log("Campaigns fetch failed:", error);
+        return [];
+      }
     },
   });
 
-  // Fetch personalized recommendations
-  const { data: personalizedProducts } = usePersonalizedRecommendations();
-
-  // Fetch trending products
-  const { data: trendingProducts } = useTrendingProducts("week");
-
-  // Fetch discounted products
-  const { data: discountedProducts } = useQuery({
-    queryKey: ["discounted-products"],
+  // Fetch popular products based on rating and reviews
+  const {
+    data: popularProducts,
+    isLoading: popularLoading,
+    error: popularError,
+  } = useQuery({
+    queryKey: ["popular-products", selectedSubcategory],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("products")
         .select(
           `
           *,
-          seller:sellers(business_name, id),
-          reviews:reviews(rating)
+          seller:sellers(business_name, business_slug, logo_url)
+        `
+        )
+        .eq("is_active", true)
+        .eq("status", "active")
+        .not("average_rating", "is", null)
+        .gt("average_rating", 0);
+
+      // Filter by subcategory if selected
+      if (selectedSubcategory !== "all") {
+        query = query.eq("category_id", selectedSubcategory);
+      }
+
+      const { data, error } = await query
+        .order("average_rating", { ascending: false })
+        .order("total_reviews", { ascending: false })
+        .limit(8);
+
+      if (error) throw error;
+      console.log("Popular products query result:", {
+        data,
+        error,
+        count: data?.length,
+      });
+      return data || [];
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+
+  // Fetch discounted products (Fırsat Ürünleri) - En yüksek indirim yüzdesine göre
+  const {
+    data: discountedProducts,
+    isLoading: discountedLoading,
+    error: discountedError,
+  } = useQuery({
+    queryKey: ["discounted-products", selectedSubcategory],
+    queryFn: async () => {
+      let query = supabase
+        .from("products")
+        .select(
+          `
+          *,
+          seller:sellers(business_name, business_slug, logo_url)
         `
         )
         .not("discounted_price", "is", null)
-        .lt("discounted_price", "price")
-        .eq("status", "active")
-        .order("created_at", { ascending: false })
-        .limit(12);
+        .gt("discount_percentage", 0)
+        .eq("is_active", true)
+        .eq("status", "active");
+
+      // Filter by subcategory if selected
+      if (selectedSubcategory !== "all") {
+        query = query.eq("category_id", selectedSubcategory);
+      }
+
+      const { data, error } = await query
+        .order("discount_percentage", { ascending: false })
+        .limit(8);
+
+      if (error) throw error;
+      console.log("Fırsat Ürünleri query result:", {
+        data,
+        error,
+        count: data?.length,
+        discountPercentages: data?.map((p) => p.discount_percentage),
+      });
+      return data || [];
+    },
+    staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+
+  // Fetch subcategories for filtering
+  const { data: subcategories } = useQuery({
+    queryKey: ["subcategories"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("categories")
+        .select("*")
+        .not("parent_id", "is", null)
+        .eq("is_active", true)
+        .order("name");
 
       if (error) throw error;
       return data || [];
     },
-  });
-
-  // Fetch top sellers
-  const { data: topSellers } = useAlgorithmSellers({
-    sortBy: "algorithm",
-    limit: 8,
   });
 
   // Recently viewed products from localStorage
@@ -145,7 +193,7 @@ const Homepage = () => {
 
       // Sort by recently viewed order
       return recentIds
-        .map((id) => data.find((product) => product.id === id))
+        .map((id) => data.find((product) => product.uuid === id))
         .filter(Boolean);
     },
     staleTime: 5 * 60 * 1000,
@@ -157,9 +205,8 @@ const Homepage = () => {
     fetchNextPage,
     hasNextPage,
     isFetchingNextPage,
-    isLoading: infiniteLoading,
   } = useInfiniteQuery({
-    queryKey: ["homepage-infinite-products", activeCategory],
+    queryKey: ["homepage-infinite-products"],
     queryFn: async ({ pageParam = 0 }) => {
       const limit = 20;
       const offset = pageParam * limit;
@@ -183,12 +230,7 @@ const Homepage = () => {
         `
         )
         .eq("is_active", true)
-        .eq("status", "published");
-
-      // Apply category filter
-      if (activeCategory !== "all") {
-        query = query.eq("category.slug", activeCategory);
-      }
+        .eq("status", "active");
 
       // Order by algorithm score for discovery
       query = query
@@ -238,14 +280,9 @@ const Homepage = () => {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const handleCategoryChange = (category) => {
-    setActiveCategory(category);
-  };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100">
       <HomepageSEO />
-      <NavBar />
 
       <main className="pt-20">
         {/* Welcome Message */}
@@ -260,8 +297,130 @@ const Homepage = () => {
           </motion.div>
         )}
 
-        {/* Hero Section */}
-        <section className="relative py-16 px-4 sm:px-6 lg:px-8">
+        {/* Campaign Carousel */}
+        {campaigns && campaigns.length > 0 && (
+          <motion.section
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="py-8"
+          >
+            <CampaignCarousel
+              campaigns={campaigns}
+              currentIndex={currentCampaignIndex}
+              onIndexChange={setCampaignIndex}
+            />
+          </motion.section>
+        )}
+
+        {/* Popular Products Carousel */}
+        {popularProducts && popularProducts.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-12"
+          >
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                Popüler Ürünler
+              </h2>
+              <ProductCarousel
+                products={popularProducts || []}
+                isLoading={popularLoading}
+                error={popularError}
+                autoSlide={true}
+                slideInterval={6000}
+                itemsPerSlide={4}
+              />
+            </div>
+          </motion.div>
+        )}
+
+        {/* Fırsat Ürünleri */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2 }}
+          className="mb-12"
+        >
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+              Fırsat Ürünleri
+            </h2>
+            <ProductCarousel
+              products={discountedProducts || []}
+              isLoading={discountedLoading}
+              error={discountedError}
+              autoSlide={true}
+              slideInterval={6000}
+              itemsPerSlide={4}
+            />
+          </div>
+        </motion.div>
+
+        {/* Categories Quick Access */}
+        <motion.section
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.65 }}
+          className="py-12"
+        >
+          <CategoriesSection />
+        </motion.section>
+
+        {/* Best Sellers */}
+        {bestSellers && bestSellers.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+            className="mb-12"
+          >
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
+                Çok Satanlar
+              </h2>
+              <ProductCarousel
+                products={bestSellers || []}
+                isLoading={bestSellersLoading}
+                error={bestSellersError}
+                autoSlide={true}
+                slideInterval={6000}
+                itemsPerSlide={4}
+              />
+            </div>
+          </motion.div>
+        )}
+
+        {/* Recently Viewed */}
+        {recentlyViewed && recentlyViewed.length > 0 && (
+          <motion.section
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.3 }}
+            className="py-8"
+          >
+            <RecentlyViewedProducts />
+          </motion.section>
+        )}
+
+        {/* Infinite Products Discovery */}
+        <motion.section
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.5 }}
+          className="py-12"
+        >
+          <InfiniteProductsSection
+            infiniteProducts={infiniteProducts}
+            isFetchingNextPage={isFetchingNextPage}
+            infiniteRef={infiniteRef}
+          />
+        </motion.section>
+
+        {/* Hero Section - Moved to bottom */}
+        <section className="relative py-16 px-4 sm:px-6 lg:px-8 bg-gradient-to-br from-orange-50 via-white to-orange-100">
           <div className="max-w-7xl mx-auto">
             <motion.div
               initial={{ opacity: 0, y: 30 }}
@@ -351,221 +510,299 @@ const Homepage = () => {
           </div>
         </section>
 
-        {/* Campaign Carousel */}
-        {campaigns && campaigns.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="py-8"
-          >
-            <CampaignCarousel
-              campaigns={campaigns}
-              currentIndex={currentCampaignIndex}
-              onIndexChange={setCampaignIndex}
-            />
-          </motion.section>
-        )}
-
-        {/* Categories Quick Access */}
-        <motion.section
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-          className="py-12"
-        >
-          <CategoriesSection />
-        </motion.section>
-
-        {/* Featured Products */}
-        {featuredProducts && featuredProducts.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.7 }}
-            className="py-8"
-          >
-            <ProductCarousel
-              title="Öne Çıkan Ürünler"
-              icon={SparklesIcon}
-              products={featuredProducts}
-              viewAllLink="/products?featured=true"
-              iconColor="text-orange-600"
-            />
-          </motion.section>
-        )}
-
-        {/* Discounted Products */}
-        {discountedProducts && discountedProducts.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-            className="py-8"
-          >
-            <ProductCarousel
-              title="Büyük İndirimler"
-              icon={TagIcon}
-              products={discountedProducts}
-              viewAllLink="/products?discounted=true"
-              iconColor="text-red-600"
-              showDiscount={true}
-            />
-          </motion.section>
-        )}
-
-        {/* Trending Products */}
-        {trendingProducts && trendingProducts.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.9 }}
-            className="py-8"
-          >
-            <ProductCarousel
-              title="Trend Ürünler"
-              icon={FireIcon}
-              products={trendingProducts}
-              viewAllLink="/products?trending=true"
-              iconColor="text-purple-600"
-            />
-          </motion.section>
-        )}
-
-        {/* New Arrivals */}
-        {newProducts && newProducts.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.0 }}
-            className="py-8"
-          >
-            <ProductCarousel
-              title="Yeni Ürünler"
-              icon={ClockIcon}
-              products={newProducts}
-              viewAllLink="/products?new=true"
-              iconColor="text-green-600"
-            />
-          </motion.section>
-        )}
-
-        {/* Best Sellers */}
-        {bestSellers && bestSellers.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.1 }}
-            className="py-8"
-          >
-            <ProductCarousel
-              title="Çok Satanlar"
-              icon={ArrowTrendingUpIcon}
-              products={bestSellers}
-              viewAllLink="/products?bestsellers=true"
-              iconColor="text-blue-600"
-            />
-          </motion.section>
-        )}
-
-        {/* Personalized Recommendations */}
-        {user && personalizedProducts && personalizedProducts.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.2 }}
-            className="py-8"
-          >
-            <ProductCarousel
-              title="Size Özel Öneriler"
-              icon={StarIcon}
-              products={personalizedProducts}
-              viewAllLink="/products?personalized=true"
-              iconColor="text-orange-600"
-            />
-          </motion.section>
-        )}
-
-        {/* Recently Viewed */}
-        {recentlyViewed && recentlyViewed.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.3 }}
-            className="py-8"
-          >
-            <RecentlyViewedProducts />
-          </motion.section>
-        )}
-
-        {/* Top Sellers */}
-        {topSellers && topSellers.length > 0 && (
-          <motion.section
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 1.4 }}
-            className="py-8"
-          >
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-              <div className="bg-white/70 backdrop-blur-sm rounded-2xl p-8 shadow-lg border border-white/20">
-                <div className="flex items-center justify-between mb-8">
-                  <h2 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-                    <UserGroupIcon className="w-8 h-8 text-orange-600" />
-                    En İyi Satıcılar
-                  </h2>
-                  <Link
-                    to="/sellers"
-                    className="text-orange-600 hover:text-orange-700 font-medium flex items-center gap-2 transition-colors"
-                  >
-                    Tümünü Gör
-                    <ArrowRightIcon className="w-4 h-4" />
-                  </Link>
-                </div>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  {topSellers.map((seller, index) => (
-                    <motion.div
-                      key={seller.id}
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.1 }}
-                      className="text-center group"
+        {/* Footer */}
+        <footer className="bg-gray-100 dark:bg-gray-800">
+          <div className="max-w-7xl mx-auto px-4 py-12">
+            {/* Upper Section */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-8 mb-8">
+              {/* ANDA */}
+              <div className="lg:col-span-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                  ANDA
+                </h3>
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <li>
+                    <Link
+                      to="/about"
+                      className="hover:text-orange-600 transition-colors"
                     >
-                      <Link
-                        to={`/seller/${seller.slug}`}
-                        className="block p-6 bg-gradient-to-br from-orange-50 to-orange-100 rounded-xl hover:shadow-lg transition-all duration-200 hover:scale-105"
-                      >
-                        <div className="w-16 h-16 bg-gradient-to-br from-orange-400 to-orange-600 rounded-full mx-auto mb-4 flex items-center justify-center text-white text-xl font-bold">
-                          {seller.business_name?.[0] || seller.name?.[0] || "S"}
-                        </div>
-                        <h3 className="font-semibold text-gray-900 group-hover:text-orange-600 transition-colors">
-                          {seller.business_name || seller.name}
-                        </h3>
-                        <p className="text-sm text-gray-600 mt-1">
-                          {seller.total_sales || 0} satış
-                        </p>
-                      </Link>
-                    </motion.div>
-                  ))}
+                      Biz Kimiz
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/careers"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Kariyer
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/sustainability"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Sürdürülebilirlik
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/contact"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      İletişim
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/security"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      ANDA'da Güvenlik
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/recall"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Ürün Geri Çağırma
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Kampanyalar */}
+              <div className="lg:col-span-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                  Kampanyalar
+                </h3>
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <li>
+                    <Link
+                      to="/campaigns"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Kampanyalar
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/credit"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Alışveriş Kredisi
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/elite"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Elit Üyelik
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/gifts"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Hediye Fikirleri
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Satıcı */}
+              <div className="lg:col-span-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                  Satıcı
+                </h3>
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <li>
+                    <Link
+                      to="/seller/signup"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      ANDA'da Satış Yap
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/seller/guide"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Temel Kavramlar
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/seller/academy"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      ANDA Akademi
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Yardım */}
+              <div className="lg:col-span-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                  Yardım
+                </h3>
+                <ul className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                  <li>
+                    <Link
+                      to="/faq"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Sıkça Sorulan Sorular
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/help"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Canlı Yardım / Asistan
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/returns"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      Nasıl İade Edebilirim
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/guide"
+                      className="hover:text-orange-600 transition-colors"
+                    >
+                      İşlem Rehberi
+                    </Link>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Ülke Değiştir */}
+              <div className="lg:col-span-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                  Ülke Değiştir
+                </h3>
+                <div className="relative">
+                  <select className="w-full px-3 py-2 border border-gray-300 rounded-md bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-500">
+                    <option>Ülke Seç</option>
+                    <option value="tr">Türkiye</option>
+                    <option value="us">Amerika Birleşik Devletleri</option>
+                    <option value="uk">Birleşik Krallık</option>
+                    <option value="de">Almanya</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Sosyal Medya */}
+              <div className="lg:col-span-1">
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">
+                  Sosyal Medya
+                </h3>
+                <div className="flex space-x-3">
+                  <a
+                    href="#"
+                    className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white hover:bg-blue-700 transition-colors"
+                  >
+                    <span className="text-sm font-bold">f</span>
+                  </a>
+                  <a
+                    href="#"
+                    className="w-10 h-10 bg-gradient-to-r from-pink-500 to-orange-500 rounded-full flex items-center justify-center text-white hover:from-pink-600 hover:to-orange-600 transition-colors"
+                  >
+                    <span className="text-sm">📷</span>
+                  </a>
+                  <a
+                    href="#"
+                    className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center text-white hover:bg-red-700 transition-colors"
+                  >
+                    <span className="text-sm">▶</span>
+                  </a>
+                  <a
+                    href="#"
+                    className="w-10 h-10 bg-black rounded-full flex items-center justify-center text-white hover:bg-gray-800 transition-colors"
+                  >
+                    <span className="text-sm font-bold">X</span>
+                  </a>
                 </div>
               </div>
             </div>
-          </motion.section>
-        )}
 
-        {/* Infinite Products Discovery */}
-        <motion.section
-          initial={{ opacity: 0, y: 30 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 1.5 }}
-          className="py-12"
-        >
-          <InfiniteProductsSection
-            infiniteProducts={infiniteProducts}
-            isFetchingNextPage={isFetchingNextPage}
-            infiniteRef={infiniteRef}
-          />
-        </motion.section>
+            {/* Lower Section */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                {/* Güvenlik Sertifikası */}
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+                    Güvenlik Sertifikası
+                  </h4>
+                  <div className="flex space-x-2">
+                    <div className="w-12 h-8 bg-gray-200 rounded flex items-center justify-center text-xs">
+                      QR
+                    </div>
+                    <div className="w-12 h-8 bg-blue-100 rounded flex items-center justify-center text-xs text-blue-600">
+                      TR GO
+                    </div>
+                    <div className="w-12 h-8 bg-green-100 rounded flex items-center justify-center text-xs text-green-600">
+                      PCI
+                    </div>
+                    <div className="w-12 h-8 bg-blue-100 rounded flex items-center justify-center text-xs text-blue-600">
+                      ISO
+                    </div>
+                  </div>
+                </div>
+
+                {/* Güvenli Alışveriş */}
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+                    Güvenli Alışveriş
+                  </h4>
+                  <div className="flex space-x-2">
+                    <div className="w-12 h-8 bg-gray-200 rounded flex items-center justify-center text-xs">
+                      TROY
+                    </div>
+                    <div className="w-12 h-8 bg-red-100 rounded flex items-center justify-center text-xs text-red-600">
+                      MC
+                    </div>
+                    <div className="w-12 h-8 bg-blue-100 rounded flex items-center justify-center text-xs text-blue-600">
+                      VISA
+                    </div>
+                    <div className="w-12 h-8 bg-blue-100 rounded flex items-center justify-center text-xs text-blue-600">
+                      AMEX
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobil Uygulamalar */}
+                <div>
+                  <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3">
+                    Mobil Uygulamalar
+                  </h4>
+                  <div className="flex space-x-2">
+                    <button className="px-3 py-1 bg-black text-white text-xs rounded hover:bg-gray-800 transition-colors">
+                      App Store
+                    </button>
+                    <button className="px-3 py-1 bg-black text-white text-xs rounded hover:bg-gray-800 transition-colors">
+                      Google Play
+                    </button>
+                    <button className="px-3 py-1 bg-black text-white text-xs rounded hover:bg-gray-800 transition-colors">
+                      AppGallery
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </footer>
 
         {/* Back to Top Button */}
         <AnimatePresence>
@@ -680,89 +917,6 @@ function CampaignCarousel({ campaigns, currentIndex, onIndexChange }) {
               </div>
             </>
           )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-// Enhanced Product Carousel Component
-function ProductCarousel({
-  title,
-  icon: Icon,
-  products,
-  viewAllLink,
-  iconColor = "text-brand-600",
-  showDiscount = false,
-}) {
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const itemsPerView = 4;
-  const maxIndex = Math.max(0, products.length - itemsPerView);
-
-  const nextSlide = () => {
-    setCurrentIndex((prev) => Math.min(prev + 1, maxIndex));
-  };
-
-  const prevSlide = () => {
-    setCurrentIndex((prev) => Math.max(prev - 1, 0));
-  };
-
-  return (
-    <section className="py-16 bg-white dark:bg-gray-800">
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <Icon className={`w-8 h-8 ${iconColor}`} />
-            <h2 className="text-3xl font-bold text-gray-900 dark:text-white">
-              {title}
-            </h2>
-          </div>
-          <div className="flex items-center gap-4">
-            {products.length > itemsPerView && (
-              <div className="flex gap-2">
-                <button
-                  onClick={prevSlide}
-                  disabled={currentIndex === 0}
-                  className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronLeftIcon className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={nextSlide}
-                  disabled={currentIndex >= maxIndex}
-                  className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  <ChevronRightIcon className="w-5 h-5" />
-                </button>
-              </div>
-            )}
-            <Link
-              to={viewAllLink}
-              className="flex items-center gap-2 text-brand-600 dark:text-brand-400 hover:text-brand-800 dark:hover:text-brand-300 font-medium group"
-            >
-              Tümünü Gör
-              <ArrowRightIcon className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-            </Link>
-          </div>
-        </div>
-
-        <div className="relative overflow-hidden">
-          <div
-            className="flex transition-transform duration-300 ease-in-out"
-            style={{
-              transform: `translateX(-${currentIndex * (100 / itemsPerView)}%)`,
-            }}
-          >
-            {products.map((product) => (
-              <div key={product.id} className="w-1/4 flex-shrink-0 px-2">
-                <ProductCard
-                  product={product}
-                  showDiscount={showDiscount}
-                  className="h-full"
-                />
-              </div>
-            ))}
-          </div>
         </div>
       </div>
     </section>
@@ -907,7 +1061,7 @@ function InfiniteProductsSection({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {algorithmProducts.slice(0, 8).map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard key={product.uuid} product={product} />
               ))}
             </div>
           </div>
@@ -924,11 +1078,7 @@ function InfiniteProductsSection({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {campaignProducts.slice(0, 8).map((product) => (
-                <ProductCard
-                  key={product.id}
-                  product={product}
-                  showDiscount={true}
-                />
+                <ProductCard key={product.uuid} product={product} />
               ))}
             </div>
           </div>
@@ -945,7 +1095,7 @@ function InfiniteProductsSection({
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
               {recentProducts.slice(0, 8).map((product) => (
-                <ProductCard key={product.id} product={product} />
+                <ProductCard key={product.uuid} product={product} />
               ))}
             </div>
           </div>
@@ -962,7 +1112,7 @@ function InfiniteProductsSection({
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {allProducts.map((product) => (
               <ProductCard
-                key={`${product.id}-${Math.random()}`}
+                key={`${product.uuid}-${Math.random()}`}
                 product={product}
               />
             ))}

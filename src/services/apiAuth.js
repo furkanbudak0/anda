@@ -1,24 +1,10 @@
 import supabase from "./supabase";
-import { createClient } from "@supabase/supabase-js";
-
-// Service role client - signup sırasında RLS bypass için
-const supabaseUrl = "https://cnoscrzbxisnprxkdpgt.supabase.co";
-const serviceRoleKey =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNub3NjcnpieGlzbnByeGtkcGd0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1MTY1ODE5MCwiZXhwIjoyMDY3MjM0MTkwfQ.j4LgUAq0lIOLixQdI_-m5fBWsij_i5tHhr7BFgUmvTU";
-const serviceSupabase = createClient(supabaseUrl, serviceRoleKey);
+// import { logEvent } from "../utils/logger"; // Şu an kullanılmıyor, ihtiyaç olursa aç
 
 /**
- * Enhanced user registration with proper transaction-like behavior
+ * Enhanced user registration with role-based metadata
  */
-export async function userSignup({
-  fullName,
-  email,
-  password,
-  phone = null,
-  tcId = null,
-  birthDate = null,
-  gender = null,
-}) {
+export async function userSignup({ fullName, email, password, phone = null }) {
   // E-posta formatını kontrol et
   if (!email || !/\S+@\S+\.\S+/.test(email)) {
     throw new Error("Geçerli bir e-posta adresi girin");
@@ -39,111 +25,65 @@ export async function userSignup({
     throw new Error("Geçerli bir Türkiye telefon numarası girin");
   }
 
-  // STEP 1: Önce mevcut kayıt kontrolü
-  console.log("Step 1: Checking existing records for:", email);
-
-  try {
-    // Profile'da var mı kontrol et (auth kontrolü signup sırasında otomatik yapılır)
-    const { data: existingProfile } = await supabase
-      .from("profiles")
-      .select("id, email")
-      .eq("email", email)
-      .single();
-
-    if (existingProfile) {
-      throw new Error(
-        "Bu e-posta adresi zaten kayıtlı. Giriş yapmayı deneyin."
-      );
-    }
-  } catch (error) {
-    // Eğer "not found" hatası değilse, gerçek bir problem var
-    if (error.message.includes("zaten kayıtlı")) {
-      throw error;
-    }
-    // "not found" normal, devam et
-    console.log("No existing records found, proceeding...");
-  }
-
   let authUser = null;
-  let profileCreated = false;
 
   try {
-    // STEP 2: Auth user oluştur
-    console.log("Step 2: Creating auth user...");
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // 1. Auth user oluştur (email confirmation KAPALI)
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: null, // Email confirmation tamamen kapat
+        emailRedirectTo: undefined, // Email confirmation'ı devre dışı bırak
         data: {
           fullName,
           phone,
           role: "user",
           status: "active",
+          createdAt: new Date().toISOString(),
         },
       },
     });
 
-    if (authError) {
-      console.error("Auth signup error:", authError);
-
+    if (error) {
+      // Auth hatalarını düzgün handle et
       if (
-        authError.message.includes("already registered") ||
-        authError.message.includes("already been registered") ||
-        authError.message.includes("User already registered")
+        // bu kodda mantıksal hata var:
+        error.message.includes("already registered") &&
+        error.message.includes("already been registered")
       ) {
         throw new Error(
           "Bu e-posta adresi zaten kayıtlı. Giriş yapmayı deneyin."
         );
       }
-
-      throw new Error(`Hesap oluşturma hatası: ${authError.message}`);
+      throw new Error(`Hesap oluşturma hatası: ${error.message}`);
     }
 
-    if (!authData?.user) {
-      throw new Error("Auth kullanıcısı oluşturulamadı");
+    if (!data?.user) {
+      throw new Error("Kullanıcı oluşturulamadı");
     }
 
-    authUser = authData.user;
-    console.log("Auth user created successfully:", authUser.id);
+    authUser = data.user;
 
-    // STEP 3: Hemen ardından profile oluştur (using service role to bypass RLS)
-    console.log("Step 3: Creating profile...");
+    // profiles tablosuna manuel insert işlemini kaldırıyorum, trigger otomatik ekliyor
 
-    const { error: profileError } = await serviceSupabase
-      .from("profiles")
-      .insert([
-        {
-          id: authUser.id,
-          email: authUser.email,
-          name: fullName,
-          full_name: fullName,
-          phone: phone,
-          tc_id: tcId,
-          birth_date: birthDate ? new Date(birthDate) : null,
-          gender: gender,
-          role: "user",
-          status: "active",
-          is_verified: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+    // 3. HER ŞEY BAŞARILI - Şimdi email confirmation gönder
+    try {
+      // Manuel email confirmation gönder
+      await supabase.auth.resend({
+        type: "signup",
+        email: email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth?verified=true`,
         },
-      ]);
+      });
 
-    if (profileError) {
-      console.error("Profile creation error:", profileError);
-
-      // Profile başarısız olursa auth'ı geri almaya çalış
-      throw new Error(`Profil oluşturulurken hata: ${profileError.message}`);
+      console.log("Confirmation email sent successfully");
+    } catch (emailError) {
+      console.warn("Email sending failed but user created:", emailError);
+      // Email gönderilemese bile user oluşturulmuş olsun
     }
 
-    profileCreated = true;
-    console.log("Profile created successfully");
-
-    // STEP 4: Auto-login
-    console.log("Step 4: Auto-login...");
-
+    // 4. Başarı durumunda giriş yap
     const { data: loginData, error: loginError } =
       await supabase.auth.signInWithPassword({
         email,
@@ -151,37 +91,21 @@ export async function userSignup({
       });
 
     if (loginError) {
-      console.warn("Auto-login failed but user created:", loginError);
-
-      // Login başarısız olsa bile kullanıcı oluşturuldu
-      return {
-        user: authUser,
-        session: null,
-        message: "Hesap oluşturuldu! Lütfen giriş yapmayı deneyin.",
-      };
+      console.warn("Auto-login failed:", loginError);
+      // Login başarısız olsa bile user oluşturuldu
+      throw new Error("Hesap oluşturuldu! Lütfen giriş yapmayı deneyin.");
     }
 
-    console.log("User registration completed successfully");
     return loginData;
   } catch (error) {
-    console.error("Registration failed:", error);
-
-    // Rollback: Profile oluşturulmuşsa sil
-    if (profileCreated && authUser) {
+    // Eğer auth user oluşturulmuşsa ama başka bir hata varsa temizle
+    if (authUser && error.message.includes("Profil oluşturulurken hata")) {
       try {
-        console.log("Rolling back: Deleting profile...");
-        await supabase.from("profiles").delete().eq("id", authUser.id);
-      } catch (rollbackError) {
-        console.error("Profile rollback failed:", rollbackError);
+        await supabase.auth.admin.deleteUser(authUser.id);
+        console.log("Cleaned up auth user after profile creation failure");
+      } catch (cleanupError) {
+        console.error("Failed to cleanup auth user:", cleanupError);
       }
-    }
-
-    // Auth user rollback - Supabase Auth otomatik olarak handle eder
-    // Profile silindiği için auth user da otomatik olarak temizlenir
-    if (import.meta.env.DEV) {
-      console.log(
-        "Development: Auth rollback not needed - Supabase handles it automatically"
-      );
     }
 
     throw error;
@@ -192,341 +116,36 @@ export async function userSignup({
  * Enhanced seller registration with comprehensive business info
  */
 export async function sellerSignup({
-  // Business Info
-  businessType,
+  fullName,
   companyName,
-  businessEmail,
-  businessPhone,
   taxId,
-  website,
-  businessDescription,
-  categories,
-
-  // Owner Info
-  firstName,
-  lastName,
-  ownerEmail,
-  ownerPhone,
-  idNumber,
-  dob,
-
-  // Banking
-  bankName,
-  accountName,
-  accountNumber,
-  iban,
-  swiftCode,
-
-  // Documents
-  businessLicense,
-  idDocument,
-  taxCertificate,
-  bankLetter,
+  phone,
+  email,
+  password,
 }) {
-  console.log("🔐 STEP 1: sellerSignup function called with data:", {
-    businessEmail,
-    companyName,
-    businessType,
-    firstName,
-    lastName,
-  });
-
-  const tempPassword = generateTempPassword();
-  console.log("🔑 STEP 1A: Generated temp password:", tempPassword);
-
-  try {
-    console.log("🔐 STEP 2: Creating auth user...");
-    // 1. First create auth user with email confirmation disabled
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: businessEmail,
-      password: tempPassword,
-      options: {
-        emailRedirectTo: null, // Disable email confirmation for now
-        data: {
-          role: "seller",
-          status: "pending_verification",
-          fullName: `${firstName} ${lastName}`,
-          businessName: companyName,
-          createdAt: new Date().toISOString(),
-        },
-      },
-    });
-
-    console.log("🔐 STEP 2A: Auth signup result:", { authData, authError });
-
-    if (authError) {
-      console.error("❌ STEP 2B: Auth error:", authError);
-      throw new Error(authError.message);
-    }
-
-    if (!authData.user) {
-      console.error("❌ STEP 2C: No user data returned");
-      throw new Error("Kullanıcı oluşturulamadı");
-    }
-
-    console.log(
-      "✅ STEP 2D: Auth user created successfully:",
-      authData.user.id
-    );
-
-    let profileError, sellerError, applicationError;
-
-    try {
-      console.log("👤 STEP 3: Creating profile entry...");
-      // 2. Create profile entry (using service role to bypass RLS)
-      const profileData = {
-        id: authData.user.id,
-        email: businessEmail,
-        full_name: `${firstName} ${lastName}`,
-        name: `${firstName} ${lastName}`,
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: undefined,
+      data: {
+        fullName,
+        companyName,
+        taxId,
+        phone,
         role: "seller",
         status: "pending_verification",
-        is_verified: false,
-        created_at: new Date().toISOString(),
-      };
+        createdAt: new Date().toISOString(),
+      },
+    },
+  });
 
-      console.log("👤 STEP 3A: Profile data to insert:", profileData);
-
-      const { error: profError } = await serviceSupabase
-        .from("profiles")
-        .insert([profileData]);
-      profileError = profError;
-
-      console.log("👤 STEP 3B: Profile insert result:", { profileError });
-
-      if (profileError) {
-        console.error("❌ STEP 3C: Profile creation failed:", profileError);
-      } else {
-        console.log("✅ STEP 3D: Profile created successfully");
-      }
-
-      console.log("🏪 STEP 4: Creating seller record...");
-      // 3. Create seller record (using service role to bypass RLS)
-      const sellerData = {
-        id: authData.user.id,
-        email: businessEmail,
-        business_name: companyName,
-        business_type: businessType,
-        phone: businessPhone,
-        tax_id: taxId,
-        website,
-        description: businessDescription,
-        categories,
-        status: "pending_verification",
-        verification_status: "pending",
-        owner_first_name: firstName,
-        owner_last_name: lastName,
-        owner_email: ownerEmail,
-        owner_phone: ownerPhone,
-        owner_id_number: idNumber,
-        owner_dob: dob,
-        bank_name: bankName,
-        account_name: accountName,
-        account_number: accountNumber,
-        iban,
-        swift_code: swiftCode,
-        documents: {
-          business_license: businessLicense,
-          id_document: idDocument,
-          tax_certificate: taxCertificate,
-          bank_letter: bankLetter,
-        },
-        application_date: new Date().toISOString(),
-      };
-
-      console.log("🏪 STEP 4A: Seller data to insert:", sellerData);
-
-      const { data: sellerResult, error: sellError } = await serviceSupabase
-        .from("sellers")
-        .insert([sellerData])
-        .select()
-        .single();
-
-      sellerError = sellError;
-
-      console.log("🏪 STEP 4B: Seller insert result:", {
-        sellerResult,
-        sellError,
-      });
-
-      if (sellError) {
-        console.error("❌ STEP 4C: Seller creation failed:", sellError);
-      } else {
-        console.log(
-          "✅ STEP 4D: Seller record created successfully:",
-          sellerResult
-        );
-      }
-
-      console.log("📝 STEP 5: Creating seller application record...");
-      // 4. Create seller application record (using service role to bypass RLS)
-      const applicationData = {
-        seller_id: authData.user.id,
-        business_name: companyName,
-        status: "pending",
-        submitted_at: new Date().toISOString(),
-        application_data: {
-          business: {
-            name: companyName,
-            type: businessType,
-            phone: businessPhone,
-            taxId,
-            website,
-            description: businessDescription,
-            categories,
-          },
-          owner: {
-            firstName,
-            lastName,
-            email: ownerEmail,
-            phone: ownerPhone,
-            idNumber,
-            dob,
-          },
-          banking: {
-            bankName,
-            accountName,
-            accountNumber,
-            iban,
-            swiftCode,
-          },
-        },
-      };
-
-      console.log("📝 STEP 5A: Application data to insert:", applicationData);
-
-      const { error: appError } = await serviceSupabase
-        .from("seller_applications")
-        .insert([applicationData]);
-
-      applicationError = appError;
-
-      console.log("📝 STEP 5B: Application insert result:", { appError });
-
-      if (appError) {
-        console.error("❌ STEP 5C: Application creation failed:", appError);
-      } else {
-        console.log("✅ STEP 5D: Seller application created successfully");
-      }
-
-      console.log("🔔 STEP 6: Creating admin notification...");
-      // 5. Create admin notification (using service role to bypass RLS)
-      const notificationData = {
-        type: "new_seller_application",
-        title: "Yeni Satıcı Başvurusu",
-        message: `${companyName} adlı işletmeden yeni satıcı başvurusu geldi.`,
-        data: {
-          sellerId: authData.user.id,
-          businessName: companyName,
-        },
-        created_at: new Date().toISOString(),
-        is_read: false,
-      };
-
-      console.log("🔔 STEP 6A: Notification data to insert:", notificationData);
-
-      const { error: notifError } = await serviceSupabase
-        .from("admin_notifications")
-        .insert([notificationData]);
-
-      console.log("🔔 STEP 6B: Notification insert result:", { notifError });
-
-      if (notifError) {
-        console.error("❌ STEP 6C: Notification creation failed:", notifError);
-      } else {
-        console.log("✅ STEP 6D: Admin notification created successfully");
-      }
-
-      console.log("🔍 STEP 7: Checking for database errors...");
-      // Check for any database errors
-      if (profileError || sellerError || applicationError) {
-        console.error("❌ STEP 7A: Database errors found:", {
-          profileError,
-          sellerError,
-          applicationError,
-        });
-        const errorMsg =
-          profileError?.message ||
-          sellerError?.message ||
-          applicationError?.message;
-        throw new Error(`Database işlemi başarısız: ${errorMsg}`);
-      }
-
-      console.log("✅ STEP 7B: No database errors found, proceeding...");
-
-      console.log("📧 STEP 8: Sending verification email...");
-      // 6. Only send verification email after successful database operations
-      await sendVerificationEmail(businessEmail, companyName);
-
-      console.log("📝 STEP 9: Logging activity...");
-      // 7. Log the activity
-      await logActivity(authData.user.id, "seller_registration", {
-        businessName: companyName,
-        businessType,
-      });
-
-      console.log("🎉 STEP 10: Seller signup completed successfully!");
-      console.log(`✅ Final result for ${businessEmail}:`, {
-        userId: authData.user.id,
-        businessName: companyName,
-        status: "pending_verification",
-      });
-
-      return {
-        user: authData.user,
-        seller: sellerResult,
-        message:
-          "Satıcı başvurunuz başarıyla alındı. Doğrulama e-postası gönderildi.",
-      };
-    } catch (dbError) {
-      console.error("❌ DATABASE ERROR CATCH BLOCK:");
-      console.error("Database operations failed for user:", authData.user.id);
-      console.error("Database error details:", dbError);
-      // If database operations failed, we can't easily delete the auth user
-      // Log this for manual cleanup if needed
-      throw new Error(`Database işlemi başarısız: ${dbError.message}`);
-    }
-  } catch (error) {
-    console.error("❌ FINAL ERROR CATCH BLOCK:");
-    console.error("Seller signup error:", error);
-    console.error("Error stack:", error.stack);
-    throw new Error(error.message || "Satıcı kaydı sırasında bir hata oluştu");
+  if (error) throw new Error(error.message);
+  if (!data.user) {
+    throw new Error("Kullanıcı oluşturulamadı");
   }
+  // Tüm ek kayıtlar Supabase trigger/fonksiyonları ile otomatik oluşturulacak.
 }
-
-/**
- * Generate temporary password for seller accounts
- */
-const generateTempPassword = () => {
-  return Math.random().toString(36).slice(-12) + "A1!";
-};
-
-/**
- * Send verification email to new sellers
- */
-const sendVerificationEmail = async (email, businessName) => {
-  try {
-    // In production, integrate with email service (SendGrid, etc.)
-    if (import.meta.env.DEV) {
-      console.log(`Sending verification email to ${email} for ${businessName}`);
-    }
-
-    // For now, we'll use Supabase's built-in email verification
-    const { error } = await supabase.auth.resend({
-      type: "signup",
-      email: email,
-    });
-
-    if (error) {
-      console.error("Email verification error:", error);
-    }
-
-    return true;
-  } catch (error) {
-    console.error("Send verification email error:", error);
-    return false;
-  }
-};
 
 /**
  * Enhanced login with role-based validation and security checks
@@ -641,12 +260,15 @@ export async function getCurrentUser() {
       error: sessionError,
     } = await supabase.auth.getSession();
 
+    console.log("DEBUG getCurrentUser - Supabase session:", session);
+
     if (sessionError) {
       console.error("Session error:", sessionError);
       return { user: null, profile: null };
     }
 
     if (!session?.user) {
+      console.warn("DEBUG getCurrentUser - No session user");
       return { user: null, profile: null };
     }
 
@@ -657,6 +279,7 @@ export async function getCurrentUser() {
       .eq("id", session.user.id)
       .single();
 
+    console.log("DEBUG getCurrentUser - Profile:", profile);
     if (profileError) {
       console.error("Profile fetch error:", profileError);
     }
@@ -1001,270 +624,83 @@ export async function updatePassword(newPassword) {
 }
 
 /**
- * Admin signup with simplified approach - NO RPC FUNCTIONS
+ * Admin signup with proper database schema alignment
  */
 export async function adminSignup({
-  // Basic Info
-  fullName,
   email,
   password,
   phone,
-
-  // Admin Specific
-  adminLevel = "admin", // 'admin', 'super_admin', 'moderator'
-  permissions = [],
-
-  // Created by (current admin)
+  adminLevel = "admin",
   createdBy,
-
-  // Notes
-  notes = "",
 }) {
+  let createdUser = null;
   try {
-    if (import.meta.env.DEV) {
-      console.log(`🔶 STEP 1: Starting admin signup for ${email}`);
-    }
-
-    // STEP 1: Check for existing records - DIRECT TABLE QUERIES
-    if (import.meta.env.DEV) {
-      console.log(`🔍 STEP 1A: Checking existing profiles...`);
-    }
-
-    const { data: existingProfile } = await supabase
-      .from("profiles")
-      .select("id, email")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (existingProfile) {
-      if (import.meta.env.DEV) {
-        console.log(`❌ Profile already exists:`, existingProfile);
-      }
-      throw new Error("Bu e-posta adresi zaten kayıtlı");
-    }
-
-    if (import.meta.env.DEV) {
-      console.log(`🔍 STEP 1B: Checking existing admins...`);
-    }
-
-    const { data: existingAdmin } = await supabase
-      .from("admins")
-      .select("id, email")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (existingAdmin) {
-      if (import.meta.env.DEV) {
-        console.log(`❌ Admin already exists:`, existingAdmin);
-      }
-      throw new Error("Bu e-posta adresi zaten admin olarak kayıtlı");
-    }
-
-    if (import.meta.env.DEV) {
-      console.log(`✅ STEP 1 Complete: No existing records found`);
-    }
-
-    // STEP 2: Create auth user
-    if (import.meta.env.DEV) {
-      console.log(`🔶 STEP 2: Creating auth user...`);
-    }
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // 1. Create auth user with admin role
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: null, // Disable email confirmation
+        emailRedirectTo: undefined, // Disable email confirmation for admin
         data: {
+          fullName: email.split("@")[0], // Default fullName from email
+          phone,
           role: "admin",
           status: "active",
-          fullName,
-          adminLevel,
           createdAt: new Date().toISOString(),
         },
       },
     });
 
-    if (authError) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ STEP 2 Failed:`, authError);
-      }
-
-      // Handle specific Supabase auth errors
-      if (
-        authError.message?.includes("already registered") ||
-        authError.message?.includes("User already registered")
-      ) {
-        throw new Error("Bu e-posta adresi zaten kayıtlı");
-      }
-
-      throw new Error(`Hesap oluşturulamadı: ${authError.message}`);
+    if (error) {
+      await logDebug(`adminSignup error: ${error.message}`);
+      throw new Error(error.message);
     }
-
-    if (!authData?.user?.id) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ STEP 2 Failed: No user ID returned`);
-      }
+    if (!data.user) {
+      await logDebug(`adminSignup error: Admin kullanıcısı oluşturulamadı`);
       throw new Error("Admin kullanıcısı oluşturulamadı");
     }
+    createdUser = data.user;
 
-    const userId = authData.user.id;
+    // profiles tablosuna manuel insert işlemini kaldırıyorum, trigger otomatik ekliyor
+    // admins tablosuna da manuel insert kaldırıldı, trigger otomatik ekleyecek
 
-    if (import.meta.env.DEV) {
-      console.log(`✅ STEP 2 Complete: Auth user created with ID ${userId}`);
-    }
-
-    // STEP 3: Create profile record
-    if (import.meta.env.DEV) {
-      console.log(`🔶 STEP 3: Creating profile record...`);
-    }
-
-    const profileData = {
-      id: userId,
-      email,
-      full_name: fullName,
-      name: fullName,
-      role: "admin",
-      status: "active",
-      is_verified: true,
-      created_at: new Date().toISOString(),
-    };
-
-    if (import.meta.env.DEV) {
-      console.log(`📝 Profile data:`, profileData);
-    }
-
-    const { data: profile, error: profileError } = await serviceSupabase
-      .from("profiles")
-      .insert([profileData])
-      .select()
-      .single();
-
-    if (profileError) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ STEP 3 Failed:`, profileError);
-        console.log(`🧹 Cleaning up auth user...`);
-      }
-
-      // Rollback: Try to clean up auth user (dev only)
-      if (import.meta.env.DEV) {
-        try {
-          await supabase.auth.signOut();
-        } catch (cleanupError) {
-          console.warn("Auth cleanup warning:", cleanupError);
-        }
-      }
-
-      throw new Error(`Profil oluşturulamadı: ${profileError.message}`);
-    }
-
-    if (import.meta.env.DEV) {
-      console.log(`✅ STEP 3 Complete: Profile created`);
-    }
-
-    // STEP 4: Create admin record
-    if (import.meta.env.DEV) {
-      console.log(`🔶 STEP 4: Creating admin record...`);
-    }
-
-    const adminData = {
-      id: userId,
-      email,
-      full_name: fullName,
-      name: fullName,
-      phone,
-      admin_level: adminLevel,
-      permissions: permissions,
-      department: "Management",
-      employee_id: `EMP${Date.now()}`,
-      access_level: adminLevel === "super_admin" ? 5 : 3,
-      emergency_contact: {},
-      notes: notes || "",
-      is_super_admin: adminLevel === "super_admin",
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (import.meta.env.DEV) {
-      console.log(`📝 Admin data:`, adminData);
-    }
-
-    const { data: admin, error: adminError } = await serviceSupabase
-      .from("admins")
-      .insert([adminData])
-      .select()
-      .single();
-
-    if (adminError) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ STEP 4 Failed:`, adminError);
-        console.log(`🧹 Cleaning up profile and auth user...`);
-      }
-
-      // Rollback: Delete profile record
+    // 5. Log admin creation activity (optional - don't fail if this fails)
+    if (createdBy) {
       try {
-        await supabase.from("profiles").delete().eq("id", userId);
-      } catch (cleanupError) {
-        console.warn("Profile cleanup warning:", cleanupError);
+        await logActivity(createdBy, "admin_created", {
+          newAdminId: data.user.id,
+          newAdminEmail: email,
+          adminLevel,
+        });
+      } catch (logError) {
+        await logDebug(`adminSignup logActivity error: ${logError.message}`);
       }
-
-      // Rollback: Try to clean up auth user (dev only)
-      if (import.meta.env.DEV) {
-        try {
-          await supabase.auth.signOut();
-        } catch (cleanupError) {
-          console.warn("Auth cleanup warning:", cleanupError);
-        }
-      }
-
-      throw new Error(`Admin kaydı oluşturulamadı: ${adminError.message}`);
     }
 
     if (import.meta.env.DEV) {
-      console.log(`✅ STEP 4 Complete: Admin record created`);
-    }
-
-    // STEP 5: Log admin creation activity
-    if (import.meta.env.DEV) {
-      console.log(`🔶 STEP 5: Logging admin creation...`);
-    }
-
-    try {
-      await logActivity(userId, "admin_created", {
-        adminLevel,
-        createdBy,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (logError) {
-      console.warn("Admin creation logging failed:", logError);
-    }
-
-    if (import.meta.env.DEV) {
-      console.log(`🎉 Admin signup completed successfully for ${email}`);
+      console.log(`Admin created successfully: ${email}`);
     }
 
     return {
-      user: authData.user,
-      profile,
-      admin,
+      user: data.user,
+      message: "Admin hesabı başarıyla oluşturuldu.",
     };
-  } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error("Admin signup error:", error);
-    }
-    throw error;
+  } catch (dbError) {
+    await logDebug(`adminSignup catch error: ${dbError.message}`);
+    console.error(
+      "Database operations failed for admin:",
+      createdUser?.id,
+      dbError
+    );
+    throw new Error(`Database işlemi başarısız: ${dbError.message}`);
   }
 }
 
 /**
- * Admin login with service role access
+ * Admin login with enhanced tracking
  */
 export async function adminLogin({ email, password }) {
   try {
-    if (import.meta.env.DEV) {
-      console.log(`🔐 Admin login attempt for: ${email}`);
-    }
-
     // 1. First authenticate with Supabase Auth
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -1272,70 +708,59 @@ export async function adminLogin({ email, password }) {
     });
 
     if (error) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ Auth error:`, error);
-      }
+      await logDebug(`adminLogin error: ${error.message}`);
       throw new Error(error.message);
     }
 
     if (!data.user) {
+      await logDebug(`adminLogin error: Giriş bilgileri geçersiz`);
       throw new Error("Giriş bilgileri geçersiz");
     }
 
-    if (import.meta.env.DEV) {
-      console.log(`✅ Auth successful for user: ${data.user.id}`);
-    }
-
-    // 2. Check if user is actually an admin - SERVICE ROLE ACCESS
-    if (import.meta.env.DEV) {
-      console.log(
-        `🔍 Checking admin data with service role for user ID: ${data.user.id}`
-      );
-    }
-
-    // Admin kontrolü - RLS policies ile güvenli
+    // 2. Check if user is actually an admin
     const { data: adminData, error: adminError } = await supabase
-      .from("admins")
-      .select("*")
+      .from("profiles")
+      .select("id, role, full_name, email, is_active, department")
       .eq("id", data.user.id)
+      .eq("role", "admin")
+      .eq("is_active", true)
       .single();
 
-    if (import.meta.env.DEV) {
-      console.log(`🔍 Service role admin query result:`, {
-        adminData,
-        adminError,
-      });
-    }
-
-    if (adminError) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ Service role admin data fetch error:`, adminError);
-      }
+    if (adminError || !adminData) {
       await supabase.auth.signOut();
-      throw new Error(`Admin yetki kontrolü başarısız: ${adminError.message}`);
+      await logDebug(`adminLogin error: Bu hesap admin yetkisine sahip değil`);
+      throw new Error("Bu hesap admin yetkisine sahip değil");
     }
 
-    if (!adminData) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ Admin data is null`);
-      }
-      await supabase.auth.signOut();
-      throw new Error("Admin kaydı bulunamadı");
-    }
-
-    if (!adminData.is_active) {
-      if (import.meta.env.DEV) {
-        console.error(`❌ Admin is not active:`, adminData);
-      }
-      await supabase.auth.signOut();
-      throw new Error("Admin hesabı aktif değil");
-    }
-
-    if (import.meta.env.DEV) {
-      console.log(
-        `🎉 Admin login successful: ${email} (${adminData.admin_level})`
+    // 3. Update admin last activity (optional - don't fail if this fails)
+    try {
+      await supabase
+        .from("profiles")
+        .update({
+          last_login: new Date().toISOString(),
+        })
+        .eq("id", data.user.id);
+    } catch (updateError) {
+      await logDebug(
+        `adminLogin last_login update error: ${updateError.message}`
       );
-      console.log(`📊 Admin data:`, adminData);
+    }
+
+    // 4. Log admin login activity (optional - don't fail if this fails)
+    try {
+      await logActivity(data.user.id, "admin_login", {
+        loginTime: new Date().toISOString(),
+        userAgent:
+          typeof navigator !== "undefined" ? navigator.userAgent : "unknown",
+        adminLevel: adminData.role, // role bilgisini adminLevel olarak kullan
+        department: adminData.department,
+      });
+    } catch (logError) {
+      await logDebug(`adminLogin logActivity error: ${logError.message}`);
+    }
+
+    if (import.meta.env.DEV) {
+      console.log(`Admin login successful: ${email} (${adminData.role})`);
     }
 
     return {
@@ -1343,9 +768,8 @@ export async function adminLogin({ email, password }) {
       admin: adminData,
     };
   } catch (error) {
-    if (import.meta.env.DEV) {
-      console.error("Admin login error:", error);
-    }
+    await logDebug(`adminLogin catch error: ${error.message}`);
+    console.error("Admin login error:", error);
     throw new Error(error.message || "Admin girişi sırasında bir hata oluştu");
   }
 }
@@ -1355,16 +779,9 @@ export async function adminLogin({ email, password }) {
  */
 export async function getAllAdmins() {
   const { data, error } = await supabase
-    .from("admins")
-    .select(
-      `
-      *,
-      created_by_profile:profiles!created_by(
-        full_name,
-        email
-      )
-    `
-    )
+    .from("profiles")
+    .select("*")
+    .eq("role", "admin")
     .order("created_at", { ascending: false });
 
   if (error) throw new Error(error.message);
@@ -1527,5 +944,39 @@ export async function updateAdminPermissions(adminId, permissions, updatedBy) {
     newPermissions: permissions,
   });
 
+  return data;
+}
+
+// Debug log tablosuna hata yazan fonksiyon
+async function logDebug(message) {
+  try {
+    await supabase
+      .from("debug_logs")
+      .insert([{ message, log_time: new Date().toISOString() }]);
+  } catch (e) {
+    // Sessizce yut
+  }
+}
+
+// JWT token'ı al ve sakla
+export async function getJwtToken() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  const token = data?.session?.access_token;
+  if (token) {
+    localStorage.setItem("jwt_token", token);
+  }
+  return token;
+}
+
+// Kayıt fonksiyonunda JWT token'ı döndür
+export async function signup(email, password, extraData) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: extraData },
+  });
+  if (error) throw error;
+  // Kayıt sonrası Supabase otomatik olarak oturum açmaz, email doğrulama gerekir
   return data;
 }

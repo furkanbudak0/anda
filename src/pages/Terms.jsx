@@ -3,7 +3,6 @@ import {
   CheckCircleIcon,
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
-import NavBar from "../components/NavBar";
 import { TermsSEO } from "../components/SEO";
 
 export default function Terms() {
@@ -11,7 +10,7 @@ export default function Terms() {
     <>
       <TermsSEO />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <NavBar />
+        {/* <NavBar /> */}
 
         <div className="pt-20 pb-16">
           <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">

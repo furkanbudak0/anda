@@ -1,13 +1,8 @@
 /* eslint-disable react/prop-types */
 import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import {
-  useInventoryMovements,
-  useStockAlerts,
-  useAcknowledgeStockAlert,
-  useCreateInventoryMovement,
-} from "../hooks/useAnalytics";
-import { useProducts } from "../hooks/useProducts";
+import { useCreateStockMovement } from "../hooks/useWarehouse";
+import { useProducts, useUpdateProduct } from "../hooks/useProducts";
 import { toast } from "react-hot-toast";
 import {
   ExclamationTriangleIcon,
@@ -17,20 +12,15 @@ import {
   TruckIcon,
   ArchiveBoxIcon,
   ArrowPathIcon,
-  CheckCircleIcon,
-  ClockIcon,
-  FunnelIcon,
   MagnifyingGlassIcon,
-  ChartBarIcon,
   CubeIcon,
-  SparklesIcon,
+  ShoppingBagIcon,
 } from "@heroicons/react/24/outline";
 import {
   ExclamationTriangleIcon as ExclamationTriangleIconSolid,
   CheckCircleIcon as CheckCircleIconSolid,
 } from "@heroicons/react/24/solid";
 
-import NavBar from "../components/NavBar";
 import { useBringToFrontAndCenter } from "../utils/bringToFrontAndCenter";
 
 /**
@@ -370,7 +360,6 @@ const StockMovementModal = ({
 };
 
 export default function SellerInventory() {
-  const [activeTab, setActiveTab] = useState("products");
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -383,14 +372,11 @@ export default function SellerInventory() {
   });
 
   // Fetch data
-  const { data: products, isLoading: isLoadingProducts } = useProducts();
-  const { data: movements, isLoading: isLoadingMovements } =
-    useInventoryMovements();
-  const { data: alerts, isLoading: isLoadingAlerts } = useStockAlerts();
+  const { data: products = [], isLoading: isLoadingProducts } = useProducts();
 
   // Mutations
-  const acknowledgeAlert = useAcknowledgeStockAlert();
-  const createMovement = useCreateInventoryMovement();
+  const createMovement = useCreateStockMovement();
+  const updateProduct = useUpdateProduct();
 
   // Memoized filtered products
   const filteredProducts = useMemo(() => {
@@ -431,16 +417,23 @@ export default function SellerInventory() {
       0
     );
 
+    // Sepet sayısını hesapla
+    const totalCartCount = products.reduce((sum, product) => {
+      return sum + (product.cart_count || 0);
+    }, 0);
+
     return {
       totalProducts,
       inStock,
       lowStock,
       outOfStock,
       totalValue,
+      totalCartCount,
       stockHealth: Math.round((inStock / totalProducts) * 100),
     };
   }, [products]);
 
+  // Stok hareketi ekleme işlemi
   const handleStockMovement = async () => {
     if (
       !selectedProduct ||
@@ -450,20 +443,15 @@ export default function SellerInventory() {
       toast.error("Lütfen tüm gerekli alanları doldurun");
       return;
     }
-
-    const quantityChange = ["restock", "return"].includes(stockMovement.type)
-      ? Math.abs(stockMovement.quantity)
-      : -Math.abs(stockMovement.quantity);
-
     try {
       await createMovement.mutateAsync({
-        productId: selectedProduct.id,
-        movementType: stockMovement.type,
-        quantityChange,
+        productId: selectedProduct?.uuid,
+        sellerId: selectedProduct?.seller_id,
+        type: stockMovement.type,
+        quantity: stockMovement.quantity,
         reason: stockMovement.reason,
         referenceNumber: stockMovement.referenceNumber,
       });
-
       toast.success("Stok hareketi başarıyla kaydedildi");
       setShowStockModal(false);
       setSelectedProduct(null);
@@ -474,7 +462,6 @@ export default function SellerInventory() {
         referenceNumber: "",
       });
     } catch (error) {
-      console.error("Stock movement error:", error);
       toast.error("Stok hareketi kaydedilemedi");
     }
   };
@@ -482,6 +469,23 @@ export default function SellerInventory() {
   const openStockModal = (product) => {
     setSelectedProduct(product);
     setShowStockModal(true);
+  };
+
+  // Ürün durumu değiştirme fonksiyonu
+  const handleStatusChange = async (product, newStatus) => {
+    try {
+      await updateProduct.mutateAsync({
+        productId: product.uuid,
+        updates: { status: newStatus },
+      });
+      toast.success(
+        `Ürün durumu ${
+          newStatus === "active" ? "aktif" : "pasif"
+        } olarak güncellendi`
+      );
+    } catch (error) {
+      toast.error("Ürün durumu güncellenirken hata oluştu");
+    }
   };
 
   const getFilterButtonClass = (status) => {
@@ -496,7 +500,6 @@ export default function SellerInventory() {
   if (isLoadingProducts) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900">
-        <NavBar />
         <div className="flex items-center justify-center h-96">
           <motion.div
             animate={{ rotate: 360 }}
@@ -510,8 +513,6 @@ export default function SellerInventory() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50 to-purple-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-900">
-      <NavBar />
-
       <motion.div
         variants={containerVariants}
         initial="hidden"
@@ -538,7 +539,7 @@ export default function SellerInventory() {
               </div>
 
               {/* Inventory Statistics */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-gray-900 dark:text-white">
                     {inventoryStats.totalProducts}
@@ -571,235 +572,195 @@ export default function SellerInventory() {
                     Tükendi
                   </div>
                 </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">
+                    {inventoryStats.totalCartCount}
+                  </div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Sepetteki Toplam
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </motion.div>
 
-        {/* Enhanced Stock Alerts */}
-        <AnimatePresence>
-          {alerts && alerts.length > 0 && (
-            <motion.div
-              variants={itemVariants}
-              initial="hidden"
-              animate="visible"
-              exit="hidden"
-              className="mb-6"
-            >
-              <div className="bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-6 backdrop-blur-sm">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-amber-400 to-orange-500 rounded-xl flex items-center justify-center">
-                    <ExclamationTriangleIcon className="w-6 h-6 text-white" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-amber-900 dark:text-amber-100">
-                        Stok Uyarıları ({alerts.length})
-                      </h3>
-                      <motion.button
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className="text-sm text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 font-medium"
-                      >
-                        Tümünü Görüntüle
-                      </motion.button>
-                    </div>
-                    <div className="grid gap-3">
-                      {alerts.slice(0, 3).map((alert) => (
-                        <motion.div
-                          key={alert.id}
-                          layout
-                          className="flex items-center justify-between bg-white/60 dark:bg-amber-900/30 backdrop-blur-sm rounded-xl p-4 border border-amber-200/50 dark:border-amber-700/50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <img
-                              src={
-                                alert.product.image_url?.[0] ||
-                                "/placeholder-product.jpg"
-                              }
-                              alt={alert.product.name}
-                              className="w-12 h-12 object-cover rounded-lg border border-amber-200 dark:border-amber-700"
-                            />
-                            <div>
-                              <p className="font-medium text-gray-900 dark:text-white">
-                                {alert.product.name}
-                              </p>
-                              <p className="text-sm text-amber-700 dark:text-amber-300">
-                                Stok: {alert.current_stock} • Eşik:{" "}
-                                {alert.threshold}
-                              </p>
-                            </div>
-                          </div>
-                          <motion.button
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => openStockModal(alert.product)}
-                            className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-sm font-medium rounded-lg hover:from-amber-600 hover:to-orange-600 transition-all"
-                          >
-                            Stok Ekle
-                          </motion.button>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Enhanced Controls */}
-        <motion.div variants={itemVariants} className="mb-8">
+        {/* Search and Filter Section */}
+        <motion.div variants={itemVariants} className="mb-6">
           <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-gray-700/20 p-6">
-            <div className="flex flex-col lg:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-col lg:flex-row gap-4">
               {/* Search */}
-              <div className="relative flex-1 max-w-md">
-                <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Ürün ara..."
-                  className="w-full pl-10 pr-4 py-3 bg-white/50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 backdrop-blur-sm transition-all"
-                />
+              <div className="flex-1">
+                <div className="relative">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Ürün ara..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border-2 border-gray-200 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
               </div>
 
               {/* Filters */}
-              <div className="flex items-center gap-2 bg-gray-100/50 dark:bg-gray-700/50 rounded-xl p-1 backdrop-blur-sm">
+              <div className="flex gap-2">
                 <button
                   onClick={() => setFilterStatus("all")}
                   className={getFilterButtonClass("all")}
                 >
-                  Tümü ({products?.length || 0})
+                  Tümü
                 </button>
                 <button
                   onClick={() => setFilterStatus("in_stock")}
                   className={getFilterButtonClass("in_stock")}
                 >
-                  Stokta ({inventoryStats.inStock})
+                  Stokta
                 </button>
                 <button
                   onClick={() => setFilterStatus("low_stock")}
                   className={getFilterButtonClass("low_stock")}
                 >
-                  Az Stok ({inventoryStats.lowStock})
+                  Az Stok
                 </button>
                 <button
                   onClick={() => setFilterStatus("out_of_stock")}
                   className={getFilterButtonClass("out_of_stock")}
                 >
-                  Tükendi ({inventoryStats.outOfStock})
+                  Tükendi
                 </button>
               </div>
             </div>
           </div>
         </motion.div>
 
-        {/* Enhanced Products Grid */}
-        <motion.div variants={itemVariants}>
-          <div className="grid gap-6 lg:grid-cols-2 xl:grid-cols-3">
-            <AnimatePresence>
+        {/* Products List */}
+        <motion.div variants={itemVariants} className="mb-6">
+          <div className="bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-gray-700/20 overflow-hidden">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+                Ürünler ({filteredProducts.length})
+              </h2>
+            </div>
+
+            <div className="divide-y divide-gray-200 dark:divide-gray-700">
               {filteredProducts.map((product) => (
                 <motion.div
-                  key={product.id}
-                  layout
-                  variants={itemVariants}
-                  initial="hidden"
-                  animate="visible"
-                  exit="hidden"
-                  whileHover={{ y: -2 }}
-                  className="group bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/20 dark:border-gray-700/20 overflow-hidden hover:shadow-2xl transition-all duration-300"
+                  key={product.uuid}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-6 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
                 >
-                  <div className="relative h-48 overflow-hidden">
-                    <img
-                      src={product.images?.[0] || "/placeholder-product.jpg"}
-                      alt={product.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
-                    <div className="absolute top-4 right-4">
-                      <motion.button
-                        whileHover={{ scale: 1.1 }}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => openStockModal(product)}
-                        className="w-10 h-10 bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all"
-                      >
-                        <PlusIcon className="w-5 h-5 text-gray-700 dark:text-gray-300" />
-                      </motion.button>
-                    </div>
-                  </div>
-
-                  <div className="p-6">
-                    <div className="mb-4">
-                      <h3 className="font-semibold text-gray-900 dark:text-white text-lg mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                        {product.name}
-                      </h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">
-                        SKU: {product.sku || "N/A"}
-                      </p>
-                    </div>
-
-                    <StockIndicator quantity={product.quantity} />
-
-                    <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between">
-                        <div className="text-right">
-                          <div className="text-lg font-bold text-gray-900 dark:text-white">
-                            ₺{product.price?.toLocaleString()}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-4 flex-1">
+                      {/* Product Image */}
+                      <div className="w-16 h-16 bg-gray-200 dark:bg-gray-600 rounded-lg overflow-hidden">
+                        {product.images && product.images[0] ? (
+                          <img
+                            src={product.images[0]}
+                            alt={product.name}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                            <ArchiveBoxIcon className="w-8 h-8" />
                           </div>
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            Toplam Değer: ₺
-                            {(
-                              product.price * product.quantity
-                            ).toLocaleString()}
+                        )}
+                      </div>
+
+                      {/* Product Info */}
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-gray-900 dark:text-white">
+                          {product.name}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          SKU: {product.sku || "N/A"}
+                        </p>
+                        <div className="flex items-center gap-4 mt-2">
+                          <span className="text-lg font-bold text-gray-900 dark:text-white">
+                            ₺{product.price}
+                          </span>
+                          <StockIndicator
+                            quantity={product.stock_quantity || 0}
+                          />
+                          <div className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                            <ShoppingBagIcon className="w-4 h-4" />
+                            <span className="text-sm font-medium">
+                              {product.cart_count || 0}
+                            </span>
                           </div>
                         </div>
-                        <motion.button
-                          whileHover={{ scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                          onClick={() => openStockModal(product)}
-                          className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-medium rounded-lg hover:from-blue-600 hover:to-purple-700 transition-all shadow-lg"
-                        >
-                          Stok Ekle
-                        </motion.button>
                       </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-3">
+                      {/* Status Toggle */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                          Durum:
+                        </span>
+                        <button
+                          onClick={() =>
+                            handleStatusChange(
+                              product,
+                              product.status === "active"
+                                ? "inactive"
+                                : "active"
+                            )
+                          }
+                          disabled={updateProduct.isPending}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-full transition-colors ${
+                            product.status === "active"
+                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+                              : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
+                          } hover:opacity-80 disabled:opacity-50`}
+                        >
+                          {product.status === "active" ? "Aktif" : "Pasif"}
+                        </button>
+                      </div>
+
+                      {/* Stock Movement Button */}
+                      <button
+                        onClick={() => openStockModal(product)}
+                        className="px-4 py-2 text-sm font-medium text-white bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 rounded-lg transition-all"
+                      >
+                        Stok İşlemi
+                      </button>
                     </div>
                   </div>
                 </motion.div>
               ))}
-            </AnimatePresence>
-          </div>
+            </div>
 
-          {filteredProducts.length === 0 && (
-            <motion.div variants={itemVariants} className="text-center py-12">
-              <div className="w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                <CubeIcon className="w-12 h-12 text-gray-400" />
+            {filteredProducts.length === 0 && (
+              <div className="p-12 text-center">
+                <ArchiveBoxIcon className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                  Ürün bulunamadı
+                </h3>
+                <p className="text-gray-500 dark:text-gray-400">
+                  Arama kriterlerinize uygun ürün bulunmuyor.
+                </p>
               </div>
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                Ürün bulunamadı
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                {searchQuery
-                  ? "Arama kriterlerinizi değiştirmeyi deneyin"
-                  : "Henüz ürün eklenmemiş"}
-              </p>
-            </motion.div>
-          )}
+            )}
+          </div>
         </motion.div>
-      </motion.div>
 
-      {/* Enhanced Stock Movement Modal */}
-      <AnimatePresence>
-        <StockMovementModal
-          isOpen={showStockModal}
-          onClose={() => setShowStockModal(false)}
-          selectedProduct={selectedProduct}
-          stockMovement={stockMovement}
-          setStockMovement={setStockMovement}
-          onSubmit={handleStockMovement}
-          isLoading={createMovement.isPending}
-        />
-      </AnimatePresence>
+        {/* Enhanced Stock Alerts */}
+        <AnimatePresence>
+          {/* Stok hareketi ekleme fonksiyonu */}
+          <StockMovementModal
+            isOpen={showStockModal}
+            onClose={() => setShowStockModal(false)}
+            selectedProduct={selectedProduct}
+            stockMovement={stockMovement}
+            setStockMovement={setStockMovement}
+            onSubmit={handleStockMovement}
+            isLoading={createMovement.isPending}
+          />
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }

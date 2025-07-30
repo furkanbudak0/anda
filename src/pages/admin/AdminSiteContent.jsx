@@ -9,10 +9,11 @@ import {
 } from "@heroicons/react/24/outline";
 import { supabase } from "../../services/supabase";
 import { useAuth } from "../../contexts/AuthContext";
-import NavBar from "../../components/NavBar";
+import AdminSidebar from "../AdminSidebar";
 import toast from "react-hot-toast";
 
 const contentTypes = [
+  { value: "homepage", label: "Anasayfa İçeriği" },
   { value: "faq", label: "Sık Sorulan Sorular" },
   { value: "contact_info", label: "İletişim Bilgileri" },
   { value: "about_us", label: "Hakkımızda" },
@@ -20,6 +21,8 @@ const contentTypes = [
   { value: "terms", label: "Kullanım Şartları" },
   { value: "return_policy", label: "İade Politikası" },
   { value: "shipping_info", label: "Kargo Bilgileri" },
+  { value: "help", label: "Yardım Merkezi" },
+  { value: "contact", label: "İletişim Sayfası" },
 ];
 
 export default function AdminSiteContent() {
@@ -181,10 +184,9 @@ export default function AdminSiteContent() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="pt-32 pb-16">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 pt-16 pb-16">
         <div className="max-w-7xl mx-auto px-4">
           {/* Header */}
           <div className="flex justify-between items-center mb-8">

@@ -2,25 +2,16 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   EyeIcon,
-  NoSymbolIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  MagnifyingGlassIcon,
-  FunnelIcon,
   UserIcon,
-  PlusIcon,
-  UserGroupIcon,
   ShieldCheckIcon,
   PencilIcon,
-  TrashIcon,
   CheckIcon,
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { supabase } from "../../services/supabase";
 import { useAuth } from "../../contexts/AuthContext";
-import NavBar from "../../components/NavBar";
-import Spinner from "../../components/Spinner";
-import { Modal, ModalButton, FormModal } from "../../components/ui";
+import AdminSidebar from "../AdminSidebar";
+import { Modal, FormModal } from "../../components/ui";
 import { formatDate } from "../../utils/formatters";
 import toast from "react-hot-toast";
 import {
@@ -31,13 +22,10 @@ import {
   ADMIN_LEVELS,
   DEFAULT_ADMIN_PERMISSIONS,
 } from "../../hooks/useAdminAuth";
-import { logActivity } from "../../services/apiAuth";
 
 export default function AdminUserManagement() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedUser, setSelectedUser] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
@@ -48,11 +36,11 @@ export default function AdminUserManagement() {
   const [showCreateAdminModal, setShowCreateAdminModal] = useState(false);
 
   // Fetch users
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ["admin-users", searchTerm, statusFilter],
+  const { data: users = [] } = useQuery({
+    queryKey: ["admin-users"],
     queryFn: async () => {
       let query = supabase
-        .from("users")
+        .from("profiles")
         .select(
           `
           *,
@@ -67,25 +55,10 @@ export default function AdminUserManagement() {
         )
         .order("created_at", { ascending: false });
 
-      if (searchTerm) {
-        query = query.or(
-          `full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`
-        );
-      }
-
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
-  });
-
-  const filteredUsers = users.filter((user) => {
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "suspended" && user.suspension?.is_active) ||
-      (statusFilter === "active" && !user.suspension?.is_active);
-
-    return matchesStatus;
   });
 
   // Suspend user mutation
@@ -174,10 +147,9 @@ export default function AdminUserManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="pt-32 pb-16">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 pt-16 pb-16">
         <div className="max-w-7xl mx-auto px-4">
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
@@ -401,8 +373,6 @@ export default function AdminUserManagement() {
 function UsersTab() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [selectedUser, setSelectedUser] = useState(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isSuspendModalOpen, setIsSuspendModalOpen] = useState(false);
@@ -411,11 +381,11 @@ function UsersTab() {
   const [suspensionEndDate, setSuspensionEndDate] = useState("");
 
   // Fetch users
-  const { data: users = [], isLoading } = useQuery({
-    queryKey: ["admin-users", searchTerm, statusFilter],
+  const { data: users = [] } = useQuery({
+    queryKey: ["admin-users"],
     queryFn: async () => {
       let query = supabase
-        .from("users")
+        .from("profiles")
         .select(
           `
           *,
@@ -430,25 +400,10 @@ function UsersTab() {
         )
         .order("created_at", { ascending: false });
 
-      if (searchTerm) {
-        query = query.or(
-          `full_name.ilike.%${searchTerm}%,email.ilike.%${searchTerm}%`
-        );
-      }
-
       const { data, error } = await query;
       if (error) throw error;
       return data || [];
     },
-  });
-
-  const filteredUsers = users.filter((user) => {
-    const matchesStatus =
-      statusFilter === "all" ||
-      (statusFilter === "suspended" && user.suspension?.is_active) ||
-      (statusFilter === "active" && !user.suspension?.is_active);
-
-    return matchesStatus;
   });
 
   // Suspend user mutation

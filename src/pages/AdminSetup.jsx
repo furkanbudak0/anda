@@ -130,11 +130,11 @@ const AdminSetup = () => {
 
     createAdmin(
       {
+        fullName: formData.fullName,
         email: formData.email,
         password: formData.password,
-        fullName: formData.fullName,
-        adminLevel: formData.adminLevel,
         phone: formData.phone,
+        adminLevel: formData.adminLevel,
         permissions: ["users", "sellers", "products", "orders", "analytics"], // Simplified permissions as TEXT[]
         notes: formData.notes,
       },

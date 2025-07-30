@@ -1,267 +1,266 @@
-/* eslint-disable react/prop-types */
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
+import { useCart } from "../contexts/CartContext";
+import { useAuth } from "../contexts/AuthContext";
+import LoadingFallback from "../components/LoadingFallback";
+import EmptyState from "../components/EmptyState";
 import {
   TrashIcon,
-  MinusIcon,
-  PlusIcon,
   ShoppingBagIcon,
-  ArrowRightIcon,
+  ArrowLeftIcon,
 } from "@heroicons/react/24/outline";
-import { useCart } from "../contexts/CartContext";
-import { formatPrice } from "../utils/formatters";
-import EmptyState from "../components/EmptyState";
 
 export default function Cart() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const {
-    cartState,
-    updateQuantity,
+    items,
+    loading,
+    cartCount,
     removeFromCart,
-    clearCart,
-    applyCoupon,
-    removeCoupon,
+    updateQuantity,
+    getTotal,
   } = useCart();
+  const [updatingItems, setUpdatingItems] = useState(new Set());
 
-  if (cartState.items.length === 0) {
+  // Kullanıcı giriş yapmamışsa login'e yönlendir
+  useEffect(() => {
+    if (!user) {
+      navigate("/login");
+    }
+  }, [user, navigate]);
+
+  const handleQuantityChange = async (productId, newQuantity) => {
+    setUpdatingItems((prev) => new Set(prev).add(productId));
+    try {
+      await updateQuantity(productId, newQuantity);
+    } finally {
+      setUpdatingItems((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(productId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleRemoveItem = async (productId) => {
+    setUpdatingItems((prev) => new Set(prev).add(productId));
+    try {
+      await removeFromCart(productId);
+    } finally {
+      setUpdatingItems((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(productId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleCheckout = () => {
+    navigate("/checkout");
+  };
+
+  if (loading) {
+    return <LoadingFallback />;
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  if (items.length === 0) {
     return (
-      <div className="max-w-4xl mx-auto p-6">
-        <EmptyState
-          title="Sepetiniz Boş"
-          description="Henüz sepetinize ürün eklemediniz"
-          actionLabel="Alışverişe Devam Et"
-          actionLink="/"
-          icon={ShoppingBagIcon}
-        />
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <EmptyState
+            icon={ShoppingBagIcon}
+            title="Sepetiniz Boş"
+            description="Henüz sepete ürün eklemediniz."
+            actionText="Alışverişe Başla"
+            onAction={() => navigate("/")}
+          />
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex items-center justify-between mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Sepetim</h1>
-        <button
-          onClick={clearCart}
-          className="text-red-600 hover:text-red-800 text-sm font-medium"
-        >
-          Sepeti Temizle
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Cart Items */}
-        <div className="lg:col-span-2 space-y-4">
-          {cartState.items.map((item) => (
-            <CartItem
-              key={item.id}
-              item={item}
-              onUpdateQuantity={updateQuantity}
-              onRemove={removeFromCart}
-            />
-          ))}
-        </div>
-
-        {/* Cart Summary */}
-        <div className="lg:col-span-1">
-          <CartSummary
-            cartState={cartState}
-            onApplyCoupon={applyCoupon}
-            onRemoveCoupon={removeCoupon}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function CartItem({ item, onUpdateQuantity, onRemove }) {
-  const handleQuantityChange = (newQuantity) => {
-    if (newQuantity < 1) {
-      onRemove(item.id);
-    } else {
-      onUpdateQuantity(item.id, newQuantity);
-    }
-  };
+  const total = getTotal();
 
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-      <div className="flex items-center space-x-4">
-        {/* Product Image */}
-        <Link to={`/product/${item.product.slug}`}>
-          <img
-            src={item.product.images?.[0] || "/placeholder-product.jpg"}
-            alt={item.product.name}
-            className="w-20 h-20 object-cover rounded-lg"
-          />
-        </Link>
-
-        {/* Product Info */}
-        <div className="flex-1 min-w-0">
-          <Link
-            to={`/product/${item.product.slug}`}
-            className="text-lg font-medium text-gray-900 hover:text-purple-600"
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <button
+            onClick={() => navigate(-1)}
+            className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white mb-4"
           >
-            {item.product.name}
-          </Link>
+            <ArrowLeftIcon className="w-5 h-5 mr-2" />
+            Geri Dön
+          </button>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Alışveriş Sepeti ({cartCount} ürün)
+          </h1>
+        </div>
 
-          {item.variant && (
-            <p className="text-sm text-gray-500 mt-1">{item.variant.title}</p>
-          )}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* Sepet Ürünleri */}
+          <div className="lg:col-span-2">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+              <div className="p-6">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Sepet Ürünleri
+                </h2>
+                <div className="space-y-4">
+                  {items.map((item) => {
+                    const product = item.products;
+                    const price =
+                      product?.discounted_price || product?.price || 0;
 
-          {item.product.seller && (
-            <p className="text-sm text-gray-500 mt-1">
-              Satıcı: {item.product.seller.business_name}
-            </p>
-          )}
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-center space-x-4 p-4 border border-gray-200 dark:border-gray-700 rounded-lg"
+                      >
+                        {/* Ürün Resmi */}
+                        <div className="flex-shrink-0">
+                          <img
+                            src={
+                              (Array.isArray(product?.images) &&
+                                product.images.length > 0 &&
+                                product.images[0]) ||
+                              product?.image_url ||
+                              "/placeholder-product.jpg"
+                            }
+                            alt={product?.name || "Ürün"}
+                            className="w-20 h-20 object-cover rounded-md"
+                          />
+                        </div>
 
-          <div className="flex items-center justify-between mt-4">
-            {/* Quantity Controls */}
-            <div className="flex items-center space-x-2">
-              <button
-                onClick={() => handleQuantityChange(item.quantity - 1)}
-                className="p-1 rounded-full border border-gray-300 hover:border-purple-500"
-              >
-                <MinusIcon className="w-4 h-4" />
-              </button>
+                        {/* Ürün Bilgileri */}
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                            {product?.name || "Ürün adı bulunamadı"}
+                          </h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {product?.seller?.business_name ||
+                              "Satıcı bilgisi yok"}
+                          </p>
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">
+                            ₺{price.toFixed(2)}
+                          </p>
+                        </div>
 
-              <span className="px-3 py-1 border border-gray-300 rounded-md min-w-[60px] text-center">
-                {item.quantity}
-              </span>
+                        {/* Miktar Kontrolü */}
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() =>
+                              handleQuantityChange(
+                                item.product_id,
+                                item.quantity - 1
+                              )
+                            }
+                            disabled={updatingItems.has(item.product_id)}
+                            className="w-8 h-8 flex items-center justify-center border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                          >
+                            -
+                          </button>
+                          <span className="w-12 text-center text-sm font-medium text-gray-900 dark:text-white">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() =>
+                              handleQuantityChange(
+                                item.product_id,
+                                item.quantity + 1
+                              )
+                            }
+                            disabled={updatingItems.has(item.product_id)}
+                            className="w-8 h-8 flex items-center justify-center border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+                          >
+                            +
+                          </button>
+                        </div>
 
-              <button
-                onClick={() => handleQuantityChange(item.quantity + 1)}
-                className="p-1 rounded-full border border-gray-300 hover:border-purple-500"
-              >
-                <PlusIcon className="w-4 h-4" />
-              </button>
-            </div>
+                        {/* Toplam Fiyat */}
+                        <div className="text-right">
+                          <p className="text-sm font-medium text-gray-900 dark:text-white">
+                            ₺{(price * item.quantity).toFixed(2)}
+                          </p>
+                        </div>
 
-            {/* Price and Remove */}
-            <div className="flex items-center space-x-4">
-              <div className="text-right">
-                <p className="text-lg font-semibold text-purple-600">
-                  {formatPrice(item.totalPrice)}
-                </p>
-                <p className="text-sm text-gray-500">
-                  {formatPrice(item.unitPrice)} x {item.quantity}
-                </p>
+                        {/* Sil Butonu */}
+                        <button
+                          onClick={() => handleRemoveItem(item.product_id)}
+                          disabled={updatingItems.has(item.product_id)}
+                          className="flex-shrink-0 p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                        >
+                          <TrashIcon className="w-5 h-5" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-
-              <button
-                onClick={() => onRemove(item.id)}
-                className="p-2 text-red-600 hover:text-red-800 hover:bg-red-50 rounded-full"
-                title="Sepetten Çıkar"
-              >
-                <TrashIcon className="w-5 h-5" />
-              </button>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-function CartSummary({ cartState, onApplyCoupon, onRemoveCoupon }) {
-  return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sticky top-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">
-        Sipariş Özeti
-      </h2>
+          {/* Sepet Özeti */}
+          <div className="lg:col-span-1">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm sticky top-8">
+              <div className="p-6">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                  Sepet Özeti
+                </h2>
 
-      {/* Order Summary */}
-      <div className="space-y-3 mb-6">
-        <div className="flex justify-between text-sm">
-          <span>Ara Toplam ({cartState.itemCount} ürün):</span>
-          <span>{formatPrice(cartState.subtotal)}</span>
-        </div>
+                <div className="space-y-3 mb-6">
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Ürün Sayısı:
+                    </span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {cartCount}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Ara Toplam:
+                    </span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      ₺{total.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-600 dark:text-gray-400">
+                      Kargo:
+                    </span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      Ücretsiz
+                    </span>
+                  </div>
+                  <div className="border-t border-gray-200 dark:border-gray-700 pt-3">
+                    <div className="flex justify-between text-lg font-semibold">
+                      <span className="text-gray-900 dark:text-white">
+                        Toplam:
+                      </span>
+                      <span className="text-gray-900 dark:text-white">
+                        ₺{total.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-        <div className="flex justify-between text-sm">
-          <span>KDV (%18):</span>
-          <span>{formatPrice(cartState.taxAmount)}</span>
-        </div>
-
-        {cartState.discountAmount > 0 && (
-          <div className="flex justify-between text-sm text-green-600">
-            <span>İndirim:</span>
-            <span>-{formatPrice(cartState.discountAmount)}</span>
-          </div>
-        )}
-
-        <div className="border-t border-gray-200 pt-3 flex justify-between font-semibold text-lg">
-          <span>Toplam:</span>
-          <span className="text-purple-600">
-            {formatPrice(cartState.total)}
-          </span>
-        </div>
-      </div>
-
-      {/* Coupon Section */}
-      <div className="mb-6">
-        {cartState.coupon ? (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-sm font-medium text-green-800">
-                  Kupon Uygulandı: {cartState.coupon.code}
-                </p>
-                <p className="text-xs text-green-600">
-                  %{cartState.coupon.discount_value} indirim
-                </p>
+                <button
+                  onClick={handleCheckout}
+                  disabled={items.length === 0}
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-3 px-4 rounded-lg transition-colors duration-200"
+                >
+                  Ödemeye Geç
+                </button>
               </div>
-              <button
-                onClick={onRemoveCoupon}
-                className="text-green-600 hover:text-green-800"
-              >
-                <TrashIcon className="w-4 h-4" />
-              </button>
             </div>
           </div>
-        ) : (
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Kupon Kodu
-            </label>
-            <div className="flex space-x-2">
-              <input
-                type="text"
-                placeholder="Kupon kodunuzu girin"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-purple-500 focus:border-purple-500"
-              />
-              <button
-                onClick={() => {
-                  // This would validate and apply coupon
-                  // Apply coupon logic here
-                }}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200"
-              >
-                Uygula
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Checkout Buttons */}
-      <div className="space-y-3">
-        <Link
-          to="/checkout"
-          className="w-full bg-purple-600 text-white py-3 px-4 rounded-lg hover:bg-purple-700 transition-colors flex items-center justify-center gap-2"
-        >
-          Ödemeye Geç
-          <ArrowRightIcon className="w-4 h-4" />
-        </Link>
-
-        <Link
-          to="/"
-          className="w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-200 transition-colors text-center block"
-        >
-          Alışverişe Devam Et
-        </Link>
-      </div>
-
-      {/* Security Info */}
-      <div className="mt-6 text-xs text-gray-500 text-center">
-        <p>🔒 Güvenli ödeme ile korunmaktasınız</p>
+        </div>
       </div>
     </div>
   );

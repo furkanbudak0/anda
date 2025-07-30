@@ -45,11 +45,11 @@ function useRecentlyViewed() {
 
   // Add product to recently viewed
   const addToRecentlyViewed = (product) => {
-    if (!product || !product.id) return;
+    if (!product || !product.uuid) return;
 
     setRecentlyViewed((prev) => {
       // Remove if already exists
-      const filtered = prev.filter((item) => item.id !== product.id);
+      const filtered = prev.filter((item) => item.uuid !== product.uuid);
 
       // Add to beginning
       const updated = [product, ...filtered];
@@ -60,8 +60,10 @@ function useRecentlyViewed() {
   };
 
   // Remove product from recently viewed
-  const removeFromRecentlyViewed = (productId) => {
-    setRecentlyViewed((prev) => prev.filter((item) => item.id !== productId));
+  const removeFromRecentlyViewed = (productUuid) => {
+    setRecentlyViewed((prev) =>
+      prev.filter((item) => item.uuid !== productUuid)
+    );
   };
 
   // Clear all recently viewed
@@ -78,36 +80,34 @@ function useRecentlyViewed() {
   };
 }
 
-// Export as default only
-export default useRecentlyViewed;
-
+// Tüm fonksiyonları sadece function olarak tanımla, export function kullanma. En altta tek bir export bloğu bırak.
 /**
  * Ürün görüntüleme tracklemesi için hook
  * ProductDetail sayfasında kullanılır
  */
-export function useProductViewTracking(productId) {
+function useProductViewTracking(productUuid) {
   const { addToRecentlyViewed } = useRecentlyViewed();
 
   useEffect(() => {
-    if (productId) {
+    if (productUuid) {
       // 2 saniye sonra track et (kullanıcının gerçekten ürünü incelediğinden emin olmak için)
       const timer = setTimeout(() => {
         addToRecentlyViewed({
-          id: productId,
+          uuid: productUuid,
           viewedAt: new Date().toISOString(),
         });
       }, 2000);
 
       return () => clearTimeout(timer);
     }
-  }, [productId, addToRecentlyViewed]);
+  }, [productUuid, addToRecentlyViewed]);
 }
 
 /**
  * Son görüntülenen ürünler hakkında analitik bilgiler
  * Dashboard ve raporlar için kullanılır
  */
-export function useRecentlyViewedAnalytics() {
+function useRecentlyViewedAnalytics() {
   const { recentlyViewed } = useRecentlyViewed();
 
   const analytics = {
@@ -135,7 +135,7 @@ export function useRecentlyViewedAnalytics() {
  * Belirli bir kategoriye ait son görüntülenen ürünleri getir
  * Kategori sayfalarında öneri olarak kullanılır
  */
-export function useRecentlyViewedByCategory(categorySlug) {
+function useRecentlyViewedByCategory(categorySlug) {
   const { recentlyViewed } = useRecentlyViewed();
 
   const categoryProducts = recentlyViewed.filter(
@@ -154,27 +154,36 @@ export function useRecentlyViewedByCategory(categorySlug) {
  */
 
 // Check if a product was recently viewed
-export function isProductRecentlyViewed(productId) {
+function isProductRecentlyViewed(productUuid) {
   try {
     const stored = localStorage.getItem(RECENTLY_VIEWED_KEY);
     if (!stored) return false;
 
     const items = JSON.parse(stored);
-    return items.some((item) => item.id === productId);
+    return items.some((item) => item.uuid === productUuid);
   } catch {
     return false;
   }
 }
 
 // Get recently viewed product IDs only
-export function getRecentlyViewedIds() {
+function getRecentlyViewedIds() {
   try {
     const stored = localStorage.getItem(RECENTLY_VIEWED_KEY);
-    return stored ? JSON.parse(stored).map((item) => item.id) : [];
+    return stored ? JSON.parse(stored).map((item) => item.uuid) : [];
   } catch {
     return [];
   }
 }
 
-// Export for external usage
-export { RECENTLY_VIEWED_KEY, MAX_RECENTLY_VIEWED };
+export default useRecentlyViewed;
+export {
+  useProductViewTracking,
+  useRecentlyViewedAnalytics,
+  useRecentlyViewedByCategory,
+  isProductRecentlyViewed,
+  getRecentlyViewedIds,
+  RECENTLY_VIEWED_KEY,
+  MAX_RECENTLY_VIEWED,
+};
+// NOT: useRecentlyViewed sadece default export ile kullanılabilir, diğerleri named export. Başka dosyalarda default import varsa named import olarak düzeltin.

@@ -11,16 +11,14 @@ import {
   CurrencyDollarIcon,
   ArrowTrendingUpIcon,
 } from "@heroicons/react/24/outline";
-import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import { supabase } from "../../services/supabase";
-import { useAuth } from "../../contexts/AuthContext";
-import NavBar from "../../components/NavBar";
+import AdminSidebar from "../AdminSidebar";
 import Spinner from "../../components/Spinner";
 import { formatPrice, formatDate } from "../../utils/formatters";
 import toast from "react-hot-toast";
 
 export default function AdminSellerManagement() {
-  const { user } = useAuth();
+  // const { user } = useAuth();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -42,8 +40,6 @@ export default function AdminSellerManagement() {
           *,
           user:profiles(full_name, email),
           products_count:products(count),
-          orders_count:orders(count),
-          total_revenue:orders(total_amount),
           algorithm_score:seller_algorithm_scores(total_score, admin_boost)
         `
         )
@@ -70,7 +66,7 @@ export default function AdminSellerManagement() {
 
   // Update seller status mutation
   const updateSellerStatusMutation = useMutation({
-    mutationFn: async ({ sellerId, status, reason }) => {
+    mutationFn: async ({ sellerId, status }) => {
       const { error } = await supabase
         .from("sellers")
         .update({
@@ -136,7 +132,6 @@ export default function AdminSellerManagement() {
     updateSellerStatusMutation.mutate({
       sellerId: selectedSeller.id,
       status: approvalAction,
-      reason: approvalReason,
     });
   };
 
@@ -203,10 +198,9 @@ export default function AdminSellerManagement() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
-      <div className="pt-32 pb-16">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex">
+      <AdminSidebar />
+      <div className="flex-1 pt-16 pb-16">
         <div className="max-w-7xl mx-auto px-4">
           {/* Header */}
           <div className="mb-8">

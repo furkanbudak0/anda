@@ -44,9 +44,9 @@ export default function RecentlyViewedProducts() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {recentlyViewed.slice(0, 12).map((product) => (
             <RecentlyViewedCard
-              key={product.id}
+              key={product.uuid}
               product={product}
-              onRemove={() => removeFromRecentlyViewed(product.id)}
+              onRemove={() => removeFromRecentlyViewed(product.uuid)}
             />
           ))}
         </div>
@@ -89,7 +89,7 @@ function RecentlyViewedCard({ product, onRemove }) {
         <XMarkIcon className="h-4 w-4 text-gray-500" />
       </button>
 
-      <Link to={`/product/${product.slug || product.id}`} className="block">
+      <Link to={`/product/${product.slug || product.uuid}`} className="block">
         {/* Product Image */}
         <div className="aspect-square overflow-hidden">
           <img

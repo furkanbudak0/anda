@@ -59,7 +59,7 @@ export default function NewAddeds() {
         .select(
           `
           *,
-          category:categories(*),
+          category:categories(id, name, slug),
           seller:sellers(business_name, avatar_url, rating),
           algorithm_score:algorithm_scores(*),
           reviews:reviews(rating),
@@ -302,7 +302,7 @@ export default function NewAddeds() {
               <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
                 Yeni Ürünler
               </h1>
-          </div>
+            </div>
             <p className="text-gray-600 text-lg max-w-2xl mx-auto">
               En taze ürünler ve yeni keşifler. Algoritma destekli tazelik
               analizi ile sıralanmış yeni gelenler ve trend olmaya aday ürünler.
@@ -317,17 +317,17 @@ export default function NewAddeds() {
             className="bg-white/80 backdrop-blur-sm rounded-3xl p-6 mb-8 shadow-lg border border-blue-100"
           >
             <div className="flex flex-wrap items-center justify-between gap-4">
-                {/* Search */}
+              {/* Search */}
               <div className="relative min-w-64">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
-                    <input
-                      type="text"
+                <input
+                  type="text"
                   placeholder="Yeni ürün ara..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white/50"
-                    />
-                  </div>
+                />
+              </div>
 
               {/* Filters Toggle */}
               <button
@@ -337,7 +337,7 @@ export default function NewAddeds() {
                 <FunnelIcon className="w-5 h-5" />
                 Filtreler
               </button>
-                </div>
+            </div>
 
             {/* Extended Filters */}
             <AnimatePresence>
@@ -354,7 +354,7 @@ export default function NewAddeds() {
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Tazelik Süresi
                       </label>
-                  <select
+                      <select
                         value={freshnessPeriod}
                         onChange={(e) => setFreshnessPeriod(e.target.value)}
                         className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -363,20 +363,20 @@ export default function NewAddeds() {
                         <option value="3_days">Son 3 Gün</option>
                         <option value="7_days">Son 7 Gün</option>
                         <option value="30_days">Son 30 Gün</option>
-                  </select>
-                </div>
+                      </select>
+                    </div>
 
                     {/* Sort Method */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
                         Sıralama
                       </label>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value)}
                         className="w-full p-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="newest">En Yeni</option>
+                      >
+                        <option value="newest">En Yeni</option>
                         <option value="freshness">Tazelik Skoru</option>
                         <option value="trending">Trend Analizi</option>
                         <option value="velocity">Satış Hızı</option>
@@ -399,9 +399,9 @@ export default function NewAddeds() {
                             {category.name}
                           </option>
                         ))}
-                  </select>
-                </div>
-              </div>
+                      </select>
+                    </div>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -418,7 +418,7 @@ export default function NewAddeds() {
               <div className="flex items-center gap-3 mb-6">
                 <div className="p-2 bg-gradient-to-r from-green-400 to-blue-500 rounded-xl">
                   <BoltIcon className="w-6 h-6 text-white" />
-            </div>
+                </div>
                 <h2 className="text-2xl font-bold text-gray-900">
                   Ultra Taze ⚡
                 </h2>
@@ -431,7 +431,7 @@ export default function NewAddeds() {
                 items={ultraFresh}
                 renderItem={(product) => (
                   <ProductCard
-                    key={product.id}
+                    key={product.uuid}
                     product={product}
                     showFreshnessMetrics={true}
                     tier="ultra-fresh"
@@ -472,7 +472,7 @@ export default function NewAddeds() {
                 items={trending}
                 renderItem={(product) => (
                   <ProductCard
-                    key={product.id}
+                    key={product.uuid}
                     product={product}
                     showFreshnessMetrics={true}
                     tier="trending-new"
@@ -513,7 +513,7 @@ export default function NewAddeds() {
                 items={promising}
                 renderItem={(product) => (
                   <ProductCard
-                    key={product.id}
+                    key={product.uuid}
                     product={product}
                     showFreshnessMetrics={true}
                     tier="promising"

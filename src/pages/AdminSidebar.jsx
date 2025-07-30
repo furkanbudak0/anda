@@ -33,7 +33,7 @@ const AdminSidebar = () => {
     {
       title: "Dashboard",
       items: [
-        { to: "", icon: ChartBarIcon, label: "Ana Dashboard" },
+        { to: "dashboard", icon: ChartBarIcon, label: "Ana Dashboard" },
         {
           to: "analytics",
           icon: PresentationChartBarIcon,
@@ -92,7 +92,7 @@ const AdminSidebar = () => {
     {
       title: "Teknik",
       items: [
-        { to: "system-health", icon: ServerIcon, label: "Sistem Sağlığı" },
+        { to: "system", icon: ServerIcon, label: "Sistem Sağlığı" },
         { to: "backups", icon: ArchiveBoxIcon, label: "Yedekleme" },
         { to: "api", icon: KeyIcon, label: "API Yönetimi" },
         { to: "performance", icon: CpuChipIcon, label: "Performans" },
@@ -113,10 +113,11 @@ const AdminSidebar = () => {
     },
   ];
 
+  // eslint-disable-next-line react/prop-types
   const SidebarItem = ({ to, icon: Icon, label }) => (
     <NavLink
       to={`/admin/${to}`}
-      end={to === ""}
+      end={to === "dashboard"}
       className={({ isActive }) =>
         `flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors ${
           isActive

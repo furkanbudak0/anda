@@ -376,7 +376,7 @@ export default function AuthTabs() {
         animate={{ opacity: 1 }}
         transition={{ delay: 0.8 }}
       >
-        <p>© 2024 ANDA E-Ticaret Platformu. Tüm hakları saklıdır.</p>
+        <p>© 2025 ANDA E-Ticaret Platformu. Tüm hakları saklıdır.</p>
         <div className="flex items-center justify-center mt-2 space-x-4">
           <button
             onClick={() => navigate("/privacy")}

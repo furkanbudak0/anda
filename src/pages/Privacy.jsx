@@ -1,4 +1,4 @@
-import NavBar from "../components/NavBar";
+// NavBar kaldırıldı - App.jsx'te zaten var
 import { Link } from "react-router-dom";
 import {
   ShieldCheckIcon,
@@ -10,8 +10,6 @@ import {
 export default function Privacy() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <NavBar />
-
       <div className="pt-32 pb-16">
         <div className="max-w-4xl mx-auto px-4">
           {/* Header */}

@@ -1,8 +1,6 @@
 import { useState } from "react";
 import {
   useSellerAnalytics,
-  useProductAnalytics,
-  useSellerAnalyticsSummary,
   useSellerAnalyticsSettings,
   useUpdateSellerAnalyticsSettings,
 } from "../hooks/useAnalytics";
@@ -19,7 +17,6 @@ import {
   UserGroupIcon,
 } from "@heroicons/react/24/outline";
 
-import NavBar from "../components/NavBar";
 import Spinner from "../components/Spinner";
 
 const periodOptions = [
@@ -30,19 +27,15 @@ const periodOptions = [
 
 export default function SellerAnalytics() {
   const [selectedPeriod, setSelectedPeriod] = useState("daily");
-  const [selectedProduct, setSelectedProduct] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settingsForm, setSettingsForm] = useState({});
 
   // Fetch data
   const { data: analytics, isLoading: isLoadingAnalytics } =
     useSellerAnalytics(selectedPeriod);
-  const { data: summary, isLoading: isLoadingSummary } =
-    useSellerAnalyticsSummary("monthly");
   const { data: products, isLoading: isLoadingProducts } = useProducts();
   const { data: settings, isLoading: isLoadingSettings } =
     useSellerAnalyticsSettings();
-  const { data: productAnalytics } = useProductAnalytics(selectedProduct?.id);
 
   // Mutations
   const updateSettings = useUpdateSellerAnalyticsSettings();
@@ -78,10 +71,6 @@ export default function SellerAnalytics() {
   // Calculate conversion rates
   const conversionRate =
     totals.views > 0 ? (totals.purchases / totals.views) * 100 : 0;
-  const cartConversionRate =
-    totals.cartAdditions > 0
-      ? (totals.purchases / totals.cartAdditions) * 100
-      : 0;
 
   // Get period days for display
   const days =
@@ -99,7 +88,6 @@ export default function SellerAnalytics() {
   if (isLoadingAnalytics || isLoadingProducts || isLoadingSettings) {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <NavBar />
         <div className="flex items-center justify-center h-96">
           <Spinner size="lg" />
         </div>
@@ -109,8 +97,6 @@ export default function SellerAnalytics() {
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <NavBar />
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
@@ -155,7 +141,7 @@ export default function SellerAnalytics() {
                   Toplam Görüntülenme
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {totals.views.toLocaleString()}
+                  {(totals?.views ?? 0).toLocaleString()}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500">
                   Son {days} gün
@@ -174,7 +160,7 @@ export default function SellerAnalytics() {
                   Benzersiz Ziyaretçi
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {totals.uniqueViewers.toLocaleString()}
+                  {(totals?.uniqueViewers ?? 0).toLocaleString()}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500">
                   Farklı kullanıcı
@@ -193,7 +179,7 @@ export default function SellerAnalytics() {
                   Toplam Satış
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {totals.purchases.toLocaleString()}
+                  {(totals?.purchases ?? 0).toLocaleString()}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500">
                   %{conversionRate.toFixed(1)} dönüşüm
@@ -212,12 +198,12 @@ export default function SellerAnalytics() {
                   Toplam Gelir
                 </p>
                 <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                  ₺{totals.revenue.toFixed(2)}
+                  ₺{(totals?.revenue ?? 0).toFixed(2)}
                 </p>
                 <p className="text-xs text-gray-500 dark:text-gray-500">
                   Ortalama: ₺
-                  {totals.purchases > 0
-                    ? (totals.revenue / totals.purchases).toFixed(2)
+                  {totals?.purchases > 0
+                    ? ((totals?.revenue ?? 0) / totals.purchases).toFixed(2)
                     : "0.00"}
                 </p>
               </div>
@@ -241,7 +227,7 @@ export default function SellerAnalytics() {
                   Görüntülenme
                 </span>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {totals.views.toLocaleString()} (100%)
+                  {(totals?.views ?? 0).toLocaleString()} (100%)
                 </span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
@@ -258,9 +244,12 @@ export default function SellerAnalytics() {
                   Sepete Ekleme
                 </span>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {totals.cartAdditions.toLocaleString()} (
-                  {totals.views > 0
-                    ? ((totals.cartAdditions / totals.views) * 100).toFixed(1)
+                  {(totals?.cartAdditions ?? 0).toLocaleString()} (
+                  {(totals?.views ?? 0) > 0
+                    ? (
+                        ((totals?.cartAdditions ?? 0) / (totals?.views ?? 0)) *
+                        100
+                      ).toFixed(1)
                     : 0}
                   %)
                 </span>
@@ -270,8 +259,10 @@ export default function SellerAnalytics() {
                   className="bg-green-600 h-3 rounded-full"
                   style={{
                     width: `${
-                      totals.views > 0
-                        ? (totals.cartAdditions / totals.views) * 100
+                      (totals?.views ?? 0) > 0
+                        ? ((totals?.cartAdditions ?? 0) /
+                            (totals?.views ?? 0)) *
+                          100
                         : 0
                     }%`,
                   }}
@@ -285,7 +276,7 @@ export default function SellerAnalytics() {
                   Satın Alma
                 </span>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {totals.purchases.toLocaleString()} (
+                  {(totals?.purchases ?? 0).toLocaleString()} (
                   {conversionRate.toFixed(1)}%)
                 </span>
               </div>
@@ -303,11 +294,13 @@ export default function SellerAnalytics() {
                   Favorilere Ekleme
                 </span>
                 <span className="text-sm text-gray-500 dark:text-gray-400">
-                  {totals.wishlistAdditions.toLocaleString()} (
-                  {totals.views > 0
-                    ? ((totals.wishlistAdditions / totals.views) * 100).toFixed(
-                        1
-                      )
+                  {(totals?.wishlistAdditions ?? 0).toLocaleString()} (
+                  {(totals?.views ?? 0) > 0
+                    ? (
+                        ((totals?.wishlistAdditions ?? 0) /
+                          (totals?.views ?? 0)) *
+                        100
+                      ).toFixed(1)
                     : 0}
                   %)
                 </span>
@@ -317,8 +310,10 @@ export default function SellerAnalytics() {
                   className="bg-red-600 h-3 rounded-full"
                   style={{
                     width: `${
-                      totals.views > 0
-                        ? (totals.wishlistAdditions / totals.views) * 100
+                      (totals?.views ?? 0) > 0
+                        ? ((totals?.wishlistAdditions ?? 0) /
+                            (totals?.views ?? 0)) *
+                          100
                         : 0
                     }%`,
                   }}
@@ -366,7 +361,7 @@ export default function SellerAnalytics() {
                     const productStats = analytics?.reduce(
                       (acc, day) => {
                         const productData = day.analytics?.find(
-                          (p) => p.product_id === product.id
+                          (p) => p.product_id === product.uuid
                         );
                         if (productData) {
                           acc.views += productData.total_views || 0;
@@ -397,7 +392,7 @@ export default function SellerAnalytics() {
 
                     return (
                       <tr
-                        key={product.id}
+                        key={product.uuid}
                         className="hover:bg-gray-50 dark:hover:bg-gray-700"
                       >
                         <td className="px-6 py-4 whitespace-nowrap">

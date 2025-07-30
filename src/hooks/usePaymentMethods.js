@@ -23,10 +23,16 @@ export function usePaymentMethods() {
         .eq("user_id", user.id)
         .eq("is_active", true)
         .order("is_default", { ascending: false })
+        .order("last_used_at", { ascending: false })
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      return data;
+      if (error) {
+        console.error("Ödeme yöntemleri getirme hatası:", error);
+        throw new Error(
+          error.message || "Ödeme yöntemleri yüklenirken hata oluştu"
+        );
+      }
+      return data || [];
     },
   });
 }
@@ -42,7 +48,11 @@ export function useAddPaymentMethod() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Kullanıcı girişi yapılmamış");
 
-      // If this is set as default, unset other defaults first
+      // Kart numarasını temizle ve maskele
+      const cleanCardNumber = paymentData.card_number.replace(/\s/g, "");
+      const maskedNumber = `****-****-****-${cleanCardNumber.slice(-4)}`;
+
+      // Eğer varsayılan olarak ayarlanıyorsa, diğer kartları varsayılan olmaktan çıkar
       if (paymentData.is_default) {
         await supabase
           .from("user_payment_methods")
@@ -50,9 +60,10 @@ export function useAddPaymentMethod() {
           .eq("user_id", user.id);
       }
 
-      // Create masked card number
-      const cardNumber = paymentData.card_number;
-      const maskedNumber = `****-****-****-${cardNumber.slice(-4)}`;
+      // Güvenli kart token'ı oluştur (gerçek uygulamada PCI DSS uyumlu olmalı)
+      const cardToken = `token_${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
 
       const { data, error } = await supabase
         .from("user_payment_methods")
@@ -66,13 +77,16 @@ export function useAddPaymentMethod() {
           expiry_year: paymentData.expiry_year,
           billing_address_id: paymentData.billing_address_id,
           is_default: paymentData.is_default || false,
-          // In real implementation, you would tokenize the card number
-          card_token: `token_${Math.random().toString(36).substr(2, 9)}`,
+          card_token: cardToken,
+          last_used_at: new Date().toISOString(),
         })
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Kart ekleme hatası:", error);
+        throw new Error(error.message || "Kart eklenirken hata oluştu");
+      }
       return data;
     },
     onSuccess: () => {
@@ -80,6 +94,7 @@ export function useAddPaymentMethod() {
       toast.success("Kart başarıyla eklendi");
     },
     onError: (error) => {
+      console.error("Kart ekleme hatası:", error);
       toast.error(error.message || "Kart eklenirken hata oluştu");
     },
   });
@@ -96,7 +111,7 @@ export function useUpdatePaymentMethod() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Kullanıcı girişi yapılmamış");
 
-      // If this is set as default, unset other defaults first
+      // Eğer varsayılan olarak ayarlanıyorsa, diğer kartları varsayılan olmaktan çıkar
       if (paymentData.is_default) {
         await supabase
           .from("user_payment_methods")
@@ -105,15 +120,24 @@ export function useUpdatePaymentMethod() {
           .neq("id", id);
       }
 
+      // Güncelleme verilerini hazırla
+      const updateData = {
+        ...paymentData,
+        updated_at: new Date().toISOString(),
+      };
+
       const { data, error } = await supabase
         .from("user_payment_methods")
-        .update(paymentData)
+        .update(updateData)
         .eq("id", id)
         .eq("user_id", user.id)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error("Kart güncelleme hatası:", error);
+        throw new Error(error.message || "Kart güncellenirken hata oluştu");
+      }
       return data;
     },
     onSuccess: () => {
@@ -121,6 +145,7 @@ export function useUpdatePaymentMethod() {
       toast.success("Kart bilgileri güncellendi");
     },
     onError: (error) => {
+      console.error("Kart güncelleme hatası:", error);
       toast.error(error.message || "Kart güncellenirken hata oluştu");
     },
   });
@@ -139,17 +164,24 @@ export function useDeletePaymentMethod() {
 
       const { error } = await supabase
         .from("user_payment_methods")
-        .update({ is_active: false })
+        .update({
+          is_active: false,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", paymentMethodId)
         .eq("user_id", user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Kart silme hatası:", error);
+        throw new Error(error.message || "Kart silinirken hata oluştu");
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["payment-methods"]);
       toast.success("Kart başarıyla silindi");
     },
     onError: (error) => {
+      console.error("Kart silme hatası:", error);
       toast.error(error.message || "Kart silinirken hata oluştu");
     },
   });
@@ -166,26 +198,38 @@ export function useSetDefaultPaymentMethod() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Kullanıcı girişi yapılmamış");
 
-      // First, unset all defaults
+      // Önce tüm varsayılan kartları kaldır
       await supabase
         .from("user_payment_methods")
-        .update({ is_default: false })
+        .update({
+          is_default: false,
+          updated_at: new Date().toISOString(),
+        })
         .eq("user_id", user.id);
 
-      // Then set the selected one as default
+      // Sonra seçilen kartı varsayılan yap
       const { error } = await supabase
         .from("user_payment_methods")
-        .update({ is_default: true })
+        .update({
+          is_default: true,
+          updated_at: new Date().toISOString(),
+        })
         .eq("id", paymentMethodId)
         .eq("user_id", user.id);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Varsayılan kart ayarlama hatası:", error);
+        throw new Error(
+          error.message || "Varsayılan kart güncellenirken hata oluştu"
+        );
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["payment-methods"]);
       toast.success("Varsayılan kart güncellendi");
     },
     onError: (error) => {
+      console.error("Varsayılan kart ayarlama hatası:", error);
       toast.error(
         error.message || "Varsayılan kart güncellenirken hata oluştu"
       );

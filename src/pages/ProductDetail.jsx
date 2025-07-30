@@ -1,90 +1,131 @@
-import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  HeartIcon,
-  ShareIcon,
   StarIcon,
   TruckIcon,
   ShieldCheckIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
   CheckCircleIcon,
-  ExclamationTriangleIcon,
   SparklesIcon,
-  FireIcon,
-  TagIcon,
-  GiftIcon,
   ChatBubbleLeftRightIcon,
-  UserIcon,
-  ClockIcon,
-  HandThumbUpIcon,
-  HandThumbDownIcon,
+  PencilIcon,
+  TrashIcon,
 } from "@heroicons/react/24/outline";
-import {
-  HeartIcon as HeartIconSolid,
-  StarIcon as StarIconSolid,
-} from "@heroicons/react/24/solid";
-import NavBar from "../components/NavBar";
+import { StarIcon as StarIconSolid } from "@heroicons/react/24/solid";
 import Breadcrumb from "../components/Breadcrumb";
 import { ProductSEO } from "../components/SEO";
 import ExpressCheckoutButton from "../components/ExpressCheckoutButton";
 import Spinner from "../components/Spinner";
 import EmptyState from "../components/EmptyState";
-import { useProduct } from "../hooks/useProducts";
-import { useWishlistToggle, useIsInWishlist } from "../hooks/useWishlist";
+import ConfirmationModal from "../components/ConfirmationModal";
 import { useTrackInteraction } from "../hooks/useAnalytics";
-import { useCart } from "../contexts/CartContext";
 import { useAuth } from "../contexts/AuthContext";
 import { useProductViewTracking } from "../hooks/useRecentlyViewed";
 import { notifications } from "../utils/notifications";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../services/supabase";
+import { toast } from "react-hot-toast";
+import { useTrackProductEventAdvanced } from "../hooks/useTrackProductEvent";
+import FavoriteButton from "../components/ui/FavoriteButton";
+import AddToCartButton from "../components/ui/AddToCartButton";
 
 export default function ProductDetail() {
-  const { id } = useParams();
+  const { id: productUuid } = useParams();
   const { user } = useAuth();
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
   const [selectedSize, setSelectedSize] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState("description");
-  const [showAllSpecs, setShowAllSpecs] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [isImageZoomed, setIsImageZoomed] = useState(false);
   const [newReview, setNewReview] = useState({ rating: 5, comment: "" });
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showAllReviews, setShowAllReviews] = useState(false);
+  const [editingReview, setEditingReview] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [reviewToDelete, setReviewToDelete] = useState(null);
 
-  const { addToCart } = useCart();
   const queryClient = useQueryClient();
+  const trackEvent = useTrackProductEventAdvanced();
 
-  // Fetch product data
+  // Favori sayısını getir
+  const [favoriteCount, setFavoriteCount] = useState(0);
+  useEffect(() => {
+    if (!productUuid) return;
+    supabase
+      .from("favorites")
+      .select("id", { count: "exact" })
+      .eq("product_id", productUuid)
+      .then(({ count }) => setFavoriteCount(count || 0));
+  }, [productUuid]);
+
+  // Fetch product details
   const {
     data: product,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ["product", id],
+    queryKey: ["product", productUuid],
     queryFn: async () => {
-      const { data, error } = await supabase
+      if (!productUuid) return null;
+
+      let { data, error } = await supabase
         .from("products")
         .select(
           `
           *,
-          category:categories(*),
-          seller:sellers(*),
-          variants:product_variants(*),
-          reviews:reviews(
-            *,
-            user:users(name, avatar_url)
+          seller:sellers(
+            id,
+            business_name,
+            business_slug,
+            logo_url,
+            average_rating,
+            total_reviews
+          ),
+          category:categories(
+            id,
+            name,
+            slug
           )
         `
         )
-        .eq("id", id)
-        .single();
+        .eq("uuid", productUuid)
+        .maybeSingle();
+
+      // UUID ile bulunamazsa ID ile ara
+      if (!data && !error) {
+        const idResult = await supabase
+          .from("products")
+          .select(
+            `
+            *,
+            seller:sellers(
+              id,
+              business_name,
+              business_slug,
+              logo_url,
+              average_rating,
+              total_reviews
+            ),
+            category:categories(
+              id,
+              name,
+              slug
+            )
+          `
+          )
+          .eq("id", productUuid)
+          .maybeSingle();
+
+        data = idResult.data;
+        error = idResult.error;
+      }
 
       if (error) throw error;
+      if (!data) {
+        throw new Error(`Ürün bulunamadı: ${productUuid}`);
+      }
       return data;
     },
   });
@@ -94,29 +135,131 @@ export default function ProductDetail() {
     queryKey: ["sellerProducts", product?.seller_id],
     queryFn: async () => {
       if (!product?.seller_id) return [];
-
       const { data, error } = await supabase
         .from("products")
-        .select("*")
+        .select(
+          `
+          *,
+          seller:sellers(
+            id,
+            business_name,
+            business_slug,
+            logo_url
+          )
+        `
+        )
         .eq("seller_id", product.seller_id)
-        .neq("id", id)
+        .neq("uuid", productUuid)
         .eq("status", "active")
         .limit(8);
-
       if (error) throw error;
       return data || [];
     },
     enabled: !!product?.seller_id,
   });
 
+  // Fetch product reviews
+  const { data: reviews } = useQuery({
+    queryKey: ["product-reviews", productUuid],
+    queryFn: async () => {
+      if (!productUuid) return [];
+      const { data, error } = await supabase
+        .from("reviews")
+        .select(
+          `
+          *,
+          user:profiles(full_name, avatar_url)
+        `
+        )
+        .eq("product_uuid", productUuid)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!productUuid,
+  });
+
   // Track product view
   useProductViewTracking(product);
-  useTrackInteraction("product_view", { productId: id });
+  useTrackInteraction("product_view", { productId: productUuid });
 
-  // Wishlist functionality
-  const { data: isInWishlist, isLoading: wishlistLoading } =
-    useIsInWishlist(id);
-  const wishlistMutation = useWishlistToggle();
+  // Yorum düzenleme mutation'ı
+  const updateReviewMutation = useMutation({
+    mutationFn: async ({ reviewId, rating, comment }) => {
+      const { data, error } = await supabase
+        .from("reviews")
+        .update({ rating, comment, updated_at: new Date().toISOString() })
+        .eq("id", reviewId)
+        .eq("user_id", user.id)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast.success("Yorum başarıyla güncellendi");
+      queryClient.invalidateQueries(["product", productUuid]);
+      setEditingReview(null);
+    },
+    onError: (error) => {
+      toast.error("Yorum güncellenirken hata oluştu: " + error.message);
+    },
+  });
+
+  // Yorum silme mutation'ı
+  const deleteReviewMutation = useMutation({
+    mutationFn: async (reviewId) => {
+      const { error } = await supabase
+        .from("reviews")
+        .delete()
+        .eq("id", reviewId)
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Yorum başarıyla silindi");
+      queryClient.invalidateQueries(["product", productUuid]);
+      setShowDeleteModal(false);
+      setReviewToDelete(null);
+    },
+    onError: (error) => {
+      toast.error("Yorum silinirken hata oluştu: " + error.message);
+    },
+  });
+
+  // Yorum düzenleme formu
+  const handleEditReview = (review) => {
+    setEditingReview({
+      id: review.id,
+      rating: review.rating,
+      comment: review.comment,
+    });
+  };
+
+  // Yorum düzenleme kaydetme
+  const handleSaveEdit = () => {
+    if (!editingReview) return;
+
+    updateReviewMutation.mutate({
+      reviewId: editingReview.id,
+      rating: editingReview.rating,
+      comment: editingReview.comment,
+    });
+  };
+
+  // Yorum silme onayı
+  const handleDeleteReview = (review) => {
+    setReviewToDelete(review);
+    setShowDeleteModal(true);
+  };
+
+  // Yorum silme işlemi
+  const confirmDeleteReview = () => {
+    if (!reviewToDelete) return;
+    deleteReviewMutation.mutate(reviewToDelete.id);
+  };
 
   // Review submission
   const submitReviewMutation = useMutation({
@@ -124,7 +267,7 @@ export default function ProductDetail() {
       const { data, error } = await supabase.from("reviews").insert([
         {
           ...reviewData,
-          product_id: id,
+          product_id: productUuid,
           user_id: user.id,
         },
       ]);
@@ -133,7 +276,7 @@ export default function ProductDetail() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(["product", id]);
+      queryClient.invalidateQueries(["product", productUuid]);
       setNewReview({ rating: 5, comment: "" });
       setShowReviewForm(false);
       notifications.success("Yorumunuz başarıyla eklendi!");
@@ -185,32 +328,35 @@ export default function ProductDetail() {
     }
   };
 
-  const handleAddToCart = async () => {
-    try {
-      const productToAdd = {
-        ...product,
-        selectedVariant,
-        selectedColor,
-        selectedSize,
-        quantity,
-      };
-
-      await addToCart(productToAdd, quantity);
-      notifications.ecommerce.addToCart(product.name);
-    } catch (error) {
-      notifications.error("Sepete eklenirken hata oluştu");
+  // Ürün adı ile arama sonucu ile gelindiyse event
+  useEffect(() => {
+    if (product?.uuid && window.location.search.includes("search=")) {
+      trackEvent({
+        productId: product.uuid,
+        sellerId: product.seller_id,
+        eventType: "search_result_view",
+      });
     }
+  }, [product?.uuid]);
+
+  // Custom callback fonksiyonları
+  const handleAddToCartSuccess = (product) => {
+    trackEvent({
+      productId: product.uuid,
+      sellerId: product.seller_id,
+      eventType: "cart_add",
+    });
   };
 
-  const handleToggleWishlist = () => {
-    if (!user) {
-      notifications.warning("Favorilere eklemek için giriş yapmalısınız");
-      return;
-    }
-
-    wishlistMutation.mutate(id);
+  const handleFavoriteToggle = (productId, isFavorited) => {
+    trackEvent({
+      productId: productId,
+      sellerId: product?.seller_id,
+      eventType: isFavorited ? "favorite_add" : "favorite_remove",
+    });
   };
 
+  // Yorum ekleme event'i
   const handleSubmitReview = (e) => {
     e.preventDefault();
 
@@ -225,6 +371,11 @@ export default function ProductDetail() {
     }
 
     submitReviewMutation.mutate(newReview);
+    trackEvent({
+      productId: productUuid,
+      sellerId: product?.seller_id,
+      eventType: "review_add",
+    });
   };
 
   // Get current images based on selected variant/color
@@ -267,7 +418,6 @@ export default function ProductDetail() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100">
-        <NavBar />
         <div className="pt-24 flex justify-center">
           <Spinner size="large" />
         </div>
@@ -279,11 +429,14 @@ export default function ProductDetail() {
   if (error || !product) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100">
-        <NavBar />
         <div className="pt-24 max-w-7xl mx-auto px-4">
           <EmptyState
             title="Ürün Bulunamadı"
-            description="Aradığınız ürün mevcut değil veya kaldırılmış olabilir."
+            description={
+              error?.message?.includes("invalid input syntax")
+                ? "Geçersiz ürün ID'si girdiniz. Lütfen geçerli bir ürün seçin."
+                : "Aradığınız ürün mevcut değil veya kaldırılmış olabilir."
+            }
             actionLabel="Ana Sayfaya Dön"
             actionUrl="/"
           />
@@ -292,23 +445,15 @@ export default function ProductDetail() {
     );
   }
 
-  const avgRating =
-    product.reviews?.length > 0
-      ? product.reviews.reduce((sum, review) => sum + review.rating, 0) /
-        product.reviews.length
-      : 0;
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-orange-100">
       <ProductSEO
         product={product}
-        category={product.category}
-        seller={product.seller}
-        reviews={product.reviews}
+        category={product?.category}
+        seller={product?.seller}
+        reviews={reviews}
       />
-      <NavBar />
-
-      <div className="pt-24 pb-12">
+      <main className="pt-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Breadcrumb */}
           <Breadcrumb
@@ -316,10 +461,10 @@ export default function ProductDetail() {
               { label: "Ana Sayfa", href: "/" },
               { label: "Ürünler", href: "/products" },
               {
-                label: product.category?.name || "Kategori",
-                href: `/category/${product.category?.slug}`,
+                label: product?.category?.name || "Kategori",
+                href: `/category/${product?.category?.slug}`,
               },
-              { label: product.name, href: "#" },
+              { label: product?.name, href: "#" },
             ]}
           />
 
@@ -334,7 +479,7 @@ export default function ProductDetail() {
               >
                 <img
                   src={currentImage}
-                  alt={product.name}
+                  alt={product?.name}
                   className="w-full h-full object-cover cursor-zoom-in"
                   onClick={() => setIsImageZoomed(true)}
                 />
@@ -369,7 +514,7 @@ export default function ProductDetail() {
                     >
                       <img
                         src={image}
-                        alt={`${product.name} ${index + 1}`}
+                        alt={`${product?.name} ${index + 1}`}
                         className="w-full h-full object-cover"
                       />
                     </motion.button>
@@ -383,53 +528,75 @@ export default function ProductDetail() {
               {/* Title and Basic Info */}
               <div>
                 <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                  {product.name}
+                  {product?.name}
                 </h1>
 
                 {/* Seller Info */}
                 <Link
-                  to={`/seller/${product.seller.id}`}
+                  to={`/seller/${
+                    product?.seller?.business_slug || product?.seller?.id
+                  }`}
                   className="flex items-center gap-3 p-3 bg-white/80 rounded-xl hover:bg-white transition-colors"
                 >
                   <img
                     src={
-                      product.seller.avatar_url || "/images/default-avatar.jpg"
+                      product?.seller?.logo_url || "/images/default-avatar.jpg"
                     }
-                    alt={product.seller.business_name}
-                    className="w-10 h-10 rounded-full"
+                    alt={product?.seller?.business_name}
+                    className="w-10 h-10 rounded-full object-cover"
                   />
                   <div>
                     <p className="font-medium text-gray-900">
-                      {product.seller.business_name}
+                      {product?.seller?.business_name}
                     </p>
                     <div className="flex items-center gap-1">
                       <StarIcon className="w-4 h-4 text-yellow-400 fill-current" />
                       <span className="text-sm text-gray-600">
-                        {product.seller.rating?.toFixed(1) || "0.0"}
+                        {product?.seller?.average_rating?.toFixed(1) || "0.0"}
                       </span>
                     </div>
                   </div>
                 </Link>
 
                 {/* Rating */}
-                <div className="flex items-center gap-4 mt-4">
-                  <div className="flex items-center gap-1">
-                    {[...Array(5)].map((_, index) => (
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center">
+                    {[1, 2, 3, 4, 5].map((star) => (
                       <StarIconSolid
-                        key={index}
-                        className={`w-5 h-5 ${
-                          index < Math.floor(avgRating)
+                        key={star}
+                        className={`w-4 h-4 ${
+                          star <= (product.average_rating || 0)
                             ? "text-yellow-400"
                             : "text-gray-300"
                         }`}
                       />
                     ))}
                   </div>
-                  <span className="text-gray-600">
-                    {avgRating.toFixed(1)} ({product.reviews?.length || 0}{" "}
-                    değerlendirme)
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    {product.average_rating?.toFixed(1) || "0.0"} (
+                    {product.total_reviews || 0} değerlendirme)
                   </span>
                 </div>
+
+                {/* Favori Sayısı */}
+                {favoriteCount > 0 && (
+                  <div className="flex items-center gap-2 mb-2">
+                    <svg
+                      className="w-4 h-4 text-red-500"
+                      fill="currentColor"
+                      viewBox="0 0 20 20"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                      {favoriteCount} kişi favorilere ekledi
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Price */}
@@ -550,31 +717,21 @@ export default function ProductDetail() {
 
                 {/* Action Buttons */}
                 <div className="flex gap-3">
-                  <motion.button
-                    onClick={handleAddToCart}
-                    disabled={
-                      !selectedVariant || selectedVariant.stock_quantity === 0
-                    }
-                    className="flex-1 bg-orange-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-orange-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    Sepete Ekle
-                  </motion.button>
+                  <AddToCartButton
+                    product={product}
+                    quantity={quantity}
+                    size="lg"
+                    showText={true}
+                    className="flex-1 bg-orange-500 hover:bg-orange-600 text-white py-3 px-6 rounded-xl font-semibold"
+                    onAdd={handleAddToCartSuccess}
+                  />
 
-                  <motion.button
-                    onClick={handleToggleWishlist}
-                    disabled={wishlistLoading}
-                    className="p-3 border border-gray-300 rounded-xl hover:bg-gray-50 transition-colors"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    {isInWishlist ? (
-                      <HeartIconSolid className="w-6 h-6 text-red-500" />
-                    ) : (
-                      <HeartIcon className="w-6 h-6 text-gray-600" />
-                    )}
-                  </motion.button>
+                  <FavoriteButton
+                    product={product}
+                    size="lg"
+                    className="p-3 border border-gray-300 rounded-xl hover:bg-gray-50"
+                    onToggle={handleFavoriteToggle}
+                  />
                 </div>
 
                 {/* Express Checkout */}
@@ -625,7 +782,7 @@ export default function ProductDetail() {
                   { id: "specifications", label: "Özellikler" },
                   {
                     id: "reviews",
-                    label: `Yorumlar (${product.reviews?.length || 0})`,
+                    label: `Yorumlar (${reviews?.length || 0})`,
                   },
                   { id: "shipping", label: "Kargo & İade" },
                 ].map((tab) => (
@@ -656,7 +813,7 @@ export default function ProductDetail() {
                     className="prose max-w-none"
                   >
                     <p className="text-gray-700 leading-relaxed">
-                      {product.description ||
+                      {product?.description ||
                         "Bu ürün için henüz açıklama eklenmemiş."}
                     </p>
                   </motion.div>
@@ -670,7 +827,7 @@ export default function ProductDetail() {
                     exit={{ opacity: 0, y: -20 }}
                     className="space-y-4"
                   >
-                    {product.specifications ? (
+                    {product?.specifications ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {Object.entries(product.specifications).map(
                           ([key, value]) => (
@@ -723,7 +880,27 @@ export default function ProductDetail() {
                         <h3 className="text-lg font-semibold text-gray-900">
                           Yorum Yazın
                         </h3>
-
+                        {/* Anonim gönderim seçeneği */}
+                        <div className="flex items-center gap-2 mb-2">
+                          <input
+                            type="checkbox"
+                            id="anonim"
+                            checked={newReview.anonymous || false}
+                            onChange={(e) =>
+                              setNewReview((prev) => ({
+                                ...prev,
+                                anonymous: e.target.checked,
+                              }))
+                            }
+                            className="h-4 w-4 text-orange-600 focus:ring-orange-500 border-gray-300 rounded"
+                          />
+                          <label
+                            htmlFor="anonim"
+                            className="text-sm text-gray-700"
+                          >
+                            Yorumu anonim gönder
+                          </label>
+                        </div>
                         {/* Rating */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -753,7 +930,6 @@ export default function ProductDetail() {
                             ))}
                           </div>
                         </div>
-
                         {/* Comment */}
                         <div>
                           <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -772,7 +948,6 @@ export default function ProductDetail() {
                             placeholder="Ürün hakkındaki düşüncelerinizi paylaşın..."
                           />
                         </div>
-
                         {/* Actions */}
                         <div className="flex gap-3">
                           <button
@@ -797,49 +972,149 @@ export default function ProductDetail() {
 
                     {/* Reviews List */}
                     <div className="space-y-4">
-                      {product.reviews && product.reviews.length > 0 ? (
-                        product.reviews.map((review) => (
-                          <div
-                            key={review.id}
-                            className="bg-gray-50 rounded-xl p-6"
-                          >
-                            <div className="flex items-start justify-between mb-4">
-                              <div className="flex items-center gap-3">
-                                <img
-                                  src={
-                                    review.user?.avatar_url ||
-                                    "/images/default-avatar.jpg"
-                                  }
-                                  alt={review.user?.name}
-                                  className="w-10 h-10 rounded-full"
-                                />
-                                <div>
-                                  <p className="font-medium text-gray-900">
-                                    {review.user?.name || "Anonim"}
-                                  </p>
-                                  <div className="flex items-center gap-1">
-                                    {[...Array(5)].map((_, index) => (
-                                      <StarIconSolid
-                                        key={index}
-                                        className={`w-4 h-4 ${
-                                          index < review.rating
-                                            ? "text-yellow-400"
-                                            : "text-gray-300"
-                                        }`}
-                                      />
-                                    ))}
+                      {reviews && reviews.length > 0 ? (
+                        <>
+                          {(showAllReviews ? reviews : reviews.slice(0, 3)).map(
+                            (review) => (
+                              <div
+                                key={review.id}
+                                className="bg-gray-50 rounded-xl p-6"
+                              >
+                                <div className="flex items-start justify-between mb-4">
+                                  <div className="flex items-center gap-3">
+                                    <img
+                                      src={
+                                        review.user?.avatar_url ||
+                                        "/images/default-avatar.jpg"
+                                      }
+                                      alt={review.user?.name}
+                                      className="w-10 h-10 rounded-full"
+                                    />
+                                    <div>
+                                      <p className="font-medium text-gray-900">
+                                        {review.anonymous
+                                          ? "Anonim"
+                                          : review.user?.full_name || "Anonim"}
+                                      </p>
+                                      <div className="flex items-center gap-1">
+                                        {[...Array(5)].map((_, index) => (
+                                          <StarIconSolid
+                                            key={index}
+                                            className={`w-4 h-4 ${
+                                              index < review.rating
+                                                ? "text-yellow-400"
+                                                : "text-gray-300"
+                                            }`}
+                                          />
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <time className="text-sm text-gray-500">
+                                      {new Date(
+                                        review.created_at
+                                      ).toLocaleDateString("tr-TR")}
+                                    </time>
+                                    {user && review.user_id === user.id && (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() =>
+                                            handleEditReview(review)
+                                          }
+                                          className="p-1 text-gray-500 hover:text-yellow-600 transition-colors"
+                                          title="Yorumu düzenle"
+                                        >
+                                          <PencilIcon className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() =>
+                                            handleDeleteReview(review)
+                                          }
+                                          className="p-1 text-gray-500 hover:text-red-600 transition-colors"
+                                          title="Yorumu sil"
+                                        >
+                                          <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                              </div>
-                              <time className="text-sm text-gray-500">
-                                {new Date(review.created_at).toLocaleDateString(
-                                  "tr-TR"
+
+                                {editingReview?.id === review.id ? (
+                                  <div className="space-y-3">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-sm font-medium">
+                                        Puan:
+                                      </span>
+                                      {[1, 2, 3, 4, 5].map((star) => (
+                                        <button
+                                          key={star}
+                                          onClick={() =>
+                                            setEditingReview((prev) => ({
+                                              ...prev,
+                                              rating: star,
+                                            }))
+                                          }
+                                          className={`text-2xl ${
+                                            star <= editingReview.rating
+                                              ? "text-yellow-400"
+                                              : "text-gray-300"
+                                          }`}
+                                        >
+                                          ★
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <textarea
+                                      value={editingReview.comment}
+                                      onChange={(e) =>
+                                        setEditingReview((prev) => ({
+                                          ...prev,
+                                          comment: e.target.value,
+                                        }))
+                                      }
+                                      className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      rows="3"
+                                      placeholder="Yorumunuzu yazın..."
+                                    />
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={handleSaveEdit}
+                                        disabled={
+                                          updateReviewMutation.isPending
+                                        }
+                                        className="px-3 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+                                      >
+                                        {updateReviewMutation.isPending
+                                          ? "Kaydediliyor..."
+                                          : "Kaydet"}
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingReview(null)}
+                                        className="px-3 py-1 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+                                      >
+                                        İptal
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <p className="text-gray-700">
+                                    {review.comment}
+                                  </p>
                                 )}
-                              </time>
-                            </div>
-                            <p className="text-gray-700">{review.comment}</p>
-                          </div>
-                        ))
+                              </div>
+                            )
+                          )}
+                          {reviews.length > 3 && !showAllReviews && (
+                            <button
+                              onClick={() => setShowAllReviews(true)}
+                              className="w-full mt-2 py-2 bg-orange-100 text-orange-700 rounded-lg hover:bg-orange-200 transition-colors"
+                            >
+                              Daha fazla yorum göster
+                            </button>
+                          )}
+                        </>
                       ) : (
                         <p className="text-gray-600 text-center py-8">
                           Bu ürün için henüz yorum yapılmamış. İlk yorum yapan
@@ -913,8 +1188,8 @@ export default function ProductDetail() {
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                 {sellerProducts.map((item) => (
                   <Link
-                    key={item.id}
-                    to={`/product/${item.id}`}
+                    key={item.uuid}
+                    to={`/product/${item.uuid}`}
                     className="bg-white rounded-xl shadow-lg overflow-hidden hover:shadow-xl transition-shadow"
                   >
                     <img
@@ -926,9 +1201,44 @@ export default function ProductDetail() {
                       <h3 className="font-medium text-gray-900 line-clamp-2 mb-2">
                         {item.name}
                       </h3>
-                      <p className="text-lg font-bold text-orange-600">
-                        {item.price.toLocaleString("tr-TR")} ₺
-                      </p>
+                      {item.average_rating > 0 && (
+                        <div className="flex items-center gap-1 mb-2">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <svg
+                              key={star}
+                              className={`w-3 h-3 ${
+                                star <= Math.round(item.average_rating)
+                                  ? "text-yellow-400 fill-current"
+                                  : "text-gray-300"
+                              }`}
+                              viewBox="0 0 20 20"
+                            >
+                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                            </svg>
+                          ))}
+                          <span className="text-xs text-gray-600">
+                            {item.average_rating.toFixed(1)} (
+                            {item.total_reviews})
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        {item.discounted_price &&
+                        item.discounted_price < item.price ? (
+                          <>
+                            <span className="text-lg font-bold text-orange-600">
+                              {item.discounted_price.toLocaleString("tr-TR")} ₺
+                            </span>
+                            <span className="text-sm text-gray-500 line-through">
+                              {item.price.toLocaleString("tr-TR")} ₺
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-lg font-bold text-orange-600">
+                            {item.price.toLocaleString("tr-TR")} ₺
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </Link>
                 ))}
@@ -936,7 +1246,7 @@ export default function ProductDetail() {
             </div>
           )}
         </div>
-      </div>
+      </main>
 
       {/* Image Zoom Modal */}
       <AnimatePresence>
@@ -950,7 +1260,7 @@ export default function ProductDetail() {
           >
             <motion.img
               src={currentImage}
-              alt={product.name}
+              alt={product?.name}
               className="max-w-full max-h-full object-contain"
               initial={{ scale: 0.5 }}
               animate={{ scale: 1 }}
@@ -959,6 +1269,26 @@ export default function ProductDetail() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Silme Onay Modalı */}
+      {showDeleteModal && reviewToDelete && (
+        <ConfirmationModal
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setReviewToDelete(null);
+          }}
+          onConfirm={confirmDeleteReview}
+          title="Yorumu Sil"
+          danger={true}
+          confirmText="Evet, Sil"
+          cancelText="İptal"
+        >
+          <p>{`"${
+            reviewToDelete.product?.name || "Bu ürün"
+          }" için yazdığınız yorumu silmek istediğinizden emin misiniz?`}</p>
+        </ConfirmationModal>
+      )}
     </div>
   );
 }

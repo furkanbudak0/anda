@@ -104,7 +104,9 @@ export function useSystemAnalytics() {
           revenueResult,
         ] = await Promise.all([
           // Total users count
-          supabase.from("users").select("id, created_at", { count: "exact" }),
+          supabase
+            .from("profiles")
+            .select("id, created_at", { count: "exact" }),
 
           // Total sellers count and pending applications
           supabase
@@ -403,14 +405,17 @@ export function useCreateAdmin() {
  */
 export function useAdminLogin() {
   const queryClient = useQueryClient();
+  const { refreshUser } = useAuth();
 
   return useMutation({
     mutationFn: adminLogin,
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       toast.success("Admin girişi başarılı!");
       // User ve admin bilgilerini cache'e ekle
       queryClient.setQueryData(["user"], data.user);
       queryClient.invalidateQueries({ queryKey: ["admin-profile"] });
+      // AuthContext'i güncelle (async)
+      await refreshUser();
     },
     onError: (error) => {
       console.error("Admin login error:", error);

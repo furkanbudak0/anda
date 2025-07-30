@@ -17,20 +17,92 @@ import { useAddresses } from "../../hooks/useAddresses";
 import { usePaymentMethods } from "../../hooks/usePaymentMethods";
 import { formatPrice } from "../../utils/formatters";
 import toast from "react-hot-toast";
+import { apiOrders } from "../../services/apiOrders";
+import { useAuth } from "../../contexts/AuthContext";
+import Modal from "../ui/Modal";
+import { useAddPaymentMethod } from "../../hooks/usePaymentMethods";
+import { useAddAddress } from "../../hooks/useAddresses";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase } from "../../services/index";
 
 /**
  * Enhanced multi-step checkout form with real address and payment selection
  */
-export default function CheckoutForm() {
+export default function CheckoutForm({
+  onOrderSuccess,
+  expressCheckout = false,
+  expressProduct = null,
+  expressQuantity = 1,
+}) {
   const [currentStep, setCurrentStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedAddress, setSelectedAddress] = useState(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState(null);
   const [sellerNotes, setSellerNotes] = useState({});
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [showCardModal, setShowCardModal] = useState(false);
+  const [agreementAccepted, setAgreementAccepted] = useState(false);
+  const [addressForm, setAddressForm] = useState({});
+  const [cardForm, setCardForm] = useState({});
+
+  // Kupon sistemi
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState("");
+
+  const addAddress = useAddAddress();
+  const addPaymentMethod = useAddPaymentMethod();
+  const queryClient = useQueryClient();
 
   const navigate = useNavigate();
-  const { cartState, clearCart } = useCart();
+  const { items, clearCart, getTotal } = useCart();
   const { user } = useAuth();
+
+  // Express checkout için ürün bilgisi
+  const [expressProductData, setExpressProductData] = useState(null);
+
+  // Express checkout için ürün bilgisini getir
+  useEffect(() => {
+    if (expressCheckout && expressProduct) {
+      const fetchExpressProduct = async () => {
+        try {
+          const { data, error } = await supabase
+            .from("products")
+            .select(
+              `
+              uuid,
+              name,
+              price,
+              discounted_price,
+              image_url,
+              images,
+              stock,
+              seller_id,
+              seller:sellers(business_name, business_slug, logo_url)
+            `
+            )
+            .eq("uuid", expressProduct)
+            .single();
+
+          if (error) {
+            console.error("Express product fetch error:", error);
+            toast.error("Ürün bilgisi alınamadı");
+            navigate("/");
+            return;
+          }
+
+          setExpressProductData(data);
+        } catch (error) {
+          console.error("Express product fetch error:", error);
+          toast.error("Ürün bilgisi alınamadı");
+          navigate("/");
+        }
+      };
+
+      fetchExpressProduct();
+    }
+  }, [expressCheckout, expressProduct, navigate]);
 
   // Fetch user addresses and payment methods
   const { data: addresses = [], isLoading: addressesLoading } = useAddresses();
@@ -40,8 +112,6 @@ export default function CheckoutForm() {
   const {
     register,
     handleSubmit,
-    watch,
-    setValue,
     formState: { errors },
   } = useForm({
     defaultValues: {
@@ -78,12 +148,12 @@ export default function CheckoutForm() {
     },
   ];
 
-  // Redirect if cart is empty
+  // Redirect if cart is empty (sadece normal checkout için)
   useEffect(() => {
-    if (cartState.items.length === 0) {
+    if (!expressCheckout && items.length === 0) {
       navigate("/cart");
     }
-  }, [cartState.items.length, navigate]);
+  }, [items.length, navigate, expressCheckout]);
 
   // Auto-select default address and payment method
   useEffect(() => {
@@ -124,81 +194,192 @@ export default function CheckoutForm() {
     }
   };
 
-  const onSubmit = async (data) => {
+  const onSubmit = async () => {
     setIsSubmitting(true);
-
     try {
       if (!selectedAddress || !selectedPaymentMethod) {
         throw new Error("Adres ve ödeme yöntemi seçilmeli");
       }
 
-      // Group items by seller
-      const sellerGroups = cartState.items.reduce((groups, item) => {
-        const sellerId = item.seller_id || "default";
-        if (!groups[sellerId]) {
-          groups[sellerId] = [];
-        }
-        groups[sellerId].push(item);
-        return groups;
-      }, {});
+      if (!agreementAccepted) {
+        throw new Error("Mesafeli satış sözleşmesini kabul etmelisiniz");
+      }
 
-      // Create separate orders for each seller
-      const orderPromises = Object.entries(sellerGroups).map(
-        async ([sellerId, items]) => {
-          const sellerTotal = items.reduce(
-            (sum, item) => sum + item.price * item.quantity,
-            0
-          );
-          const sellerNote = sellerNotes[sellerId] || "";
+      // Items kontrolü
+      if (!items || items.length === 0) {
+        throw new Error("Sepetinizde ürün bulunmamaktadır");
+      }
 
-          const orderPayload = {
-            seller_id: sellerId === "default" ? null : sellerId,
-            items: items,
-            shipping_address_id: selectedAddress.id,
-            payment_method_id: selectedPaymentMethod.id,
-            shipping_method: data.shipping_method,
-            subtotal: sellerTotal,
-            tax_amount: sellerTotal * 0.18, // 18% KDV
-            total_amount: sellerTotal * 1.18,
-            seller_note: sellerNote,
-            order_status: "pending",
-            payment_status: "pending",
-          };
+      // Express checkout için farklı items yapısı
+      let orderItems;
+      if (expressCheckout && expressProductData) {
+        orderItems = [
+          {
+            product_id: expressProductData.uuid,
+            variant_id: null,
+            seller_id: expressProductData.seller_id,
+            quantity: expressQuantity,
+            price:
+              expressProductData.discounted_price || expressProductData.price,
+            total:
+              (expressProductData.discounted_price ||
+                expressProductData.price) * expressQuantity,
+            variant: null,
+          },
+        ];
+      } else {
+        // Normal checkout için items map
+        orderItems = items.map((item) => ({
+          product_id: item.products?.uuid,
+          variant_id: item.variant?.id,
+          seller_id: item.products?.seller_id,
+          quantity: item.quantity,
+          price: item.products?.discounted_price || item.products?.price,
+          total:
+            (item.products?.discounted_price || item.products?.price) *
+            item.quantity,
+          variant: item.variant ? JSON.stringify(item.variant) : null,
+        }));
+      }
 
-          // Submit order to API
-          const response = await fetch("/api/orders", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${localStorage.getItem("token")}`,
-            },
-            body: JSON.stringify(orderPayload),
-          });
-
-          if (!response.ok) {
-            throw new Error("Sipariş oluşturulamadı");
-          }
-
-          return response.json();
-        }
-      );
-
-      const orders = await Promise.all(orderPromises);
-
-      // Clear cart
-      clearCart();
-
-      // Redirect to success page with first order
-      navigate(`/order-success/${orders[0].id}`, {
-        state: { orders },
+      // Debug için log
+      console.log("Order data being sent:", {
+        user_id: user.id,
+        total_amount: getTotal(),
+        address_id: selectedAddress?.id,
+        shipping_address: `${selectedAddress?.full_name}, ${selectedAddress?.address_line}, ${selectedAddress?.city}, ${selectedAddress?.district}`,
+        billing_address: `${selectedAddress?.full_name}, ${selectedAddress?.address_line}, ${selectedAddress?.city}, ${selectedAddress?.district}`,
+        items: orderItems,
+        notes: Object.values(sellerNotes).join("\n"),
       });
 
-      toast.success(`${orders.length} sipariş başarıyla oluşturuldu!`);
+      // Sipariş oluştur (fonksiyon ile)
+      const order = await apiOrders.createOrder({
+        user_id: user.id,
+        total_amount: getTotal(),
+        address_id: selectedAddress?.id,
+        shipping_address: `${selectedAddress?.full_name}, ${selectedAddress?.address_line}, ${selectedAddress?.city}, ${selectedAddress?.district}`,
+        billing_address: `${selectedAddress?.full_name}, ${selectedAddress?.address_line}, ${selectedAddress?.city}, ${selectedAddress?.district}`,
+        items: orderItems,
+        notes: Object.values(sellerNotes).join("\n"),
+      });
+      // Sepeti temizle
+      clearCart();
+      // Sipariş sonrası işlemler (notification, yönlendirme)
+      if (onOrderSuccess) {
+        await onOrderSuccess(order);
+      }
+      toast.success("Sipariş başarıyla oluşturuldu!");
     } catch (error) {
       console.error("Order error:", error);
       toast.error(error.message || "Sipariş oluşturulurken bir hata oluştu");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Adres ekle
+  const handleAddAddress = async (e) => {
+    e.preventDefault();
+    const result = await addAddress.mutateAsync(addressForm);
+    if (result) {
+      setShowAddressModal(false);
+      setAddressForm({}); // Form'u temizle
+      queryClient.invalidateQueries(["addresses"]);
+      setSelectedAddress(result);
+      toast.success("Adres başarıyla eklendi");
+    }
+  };
+  // Kart ekle
+  const handleAddCard = async (e) => {
+    e.preventDefault();
+    const result = await addPaymentMethod.mutateAsync(cardForm);
+    if (result) {
+      setShowCardModal(false);
+      queryClient.invalidateQueries(["payment-methods"]);
+      setSelectedPaymentMethod(result);
+      toast.success("Kart başarıyla eklendi");
+    }
+  };
+
+  // Kupon uygula
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponError("Kupon kodu giriniz");
+      return;
+    }
+
+    setCouponLoading(true);
+    setCouponError("");
+
+    try {
+      // Kupon kontrolü (ileride geliştirilecek)
+      const { data, error } = await supabase
+        .from("coupons")
+        .select("*")
+        .eq("code", couponCode.trim().toUpperCase())
+        .eq("is_active", true)
+        .single();
+
+      if (error || !data) {
+        setCouponError("Geçersiz kupon kodu");
+        return;
+      }
+
+      // Kupon geçerlilik kontrolü
+      const now = new Date();
+      if (data.expires_at && new Date(data.expires_at) < now) {
+        setCouponError("Kupon süresi dolmuş");
+        return;
+      }
+
+      setAppliedCoupon(data);
+      toast.success("Kupon başarıyla uygulandı!");
+    } catch (error) {
+      console.error("Coupon apply error:", error);
+      setCouponError("Kupon uygulanırken hata oluştu");
+    } finally {
+      setCouponLoading(false);
+    }
+  };
+
+  // Kupon kaldır
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError("");
+    toast.success("Kupon kaldırıldı");
+  };
+
+  // Express checkout için fiyat hesapla
+  const getExpressTotal = () => {
+    if (!expressProductData) return 0;
+    const price =
+      expressProductData.discounted_price || expressProductData.price;
+    let total = price * expressQuantity;
+
+    // Kupon indirimi
+    if (appliedCoupon) {
+      if (appliedCoupon.discount_type === "percentage") {
+        total = total * (1 - appliedCoupon.discount_value / 100);
+      } else if (appliedCoupon.discount_type === "fixed") {
+        total = Math.max(0, total - appliedCoupon.discount_value);
+      }
+    }
+
+    return total;
+  };
+
+  // Stok kontrolü
+  const checkStockAvailability = () => {
+    if (expressCheckout) {
+      if (!expressProductData) return false;
+      return expressProductData.stock >= expressQuantity;
+    } else {
+      return items.every((item) => {
+        const product = item.products;
+        return product && product.stock >= item.quantity;
+      });
     }
   };
 
@@ -261,6 +442,7 @@ export default function CheckoutForm() {
                 addresses={addresses}
                 selectedAddress={selectedAddress}
                 onSelectAddress={setSelectedAddress}
+                setShowAddressModal={setShowAddressModal}
               />
             )}
             {currentStep === 2 && (
@@ -271,15 +453,18 @@ export default function CheckoutForm() {
                 paymentMethods={paymentMethods}
                 selectedPaymentMethod={selectedPaymentMethod}
                 onSelectPaymentMethod={setSelectedPaymentMethod}
+                setShowCardModal={setShowCardModal}
               />
             )}
             {currentStep === 4 && (
               <ConfirmationStep
                 selectedAddress={selectedAddress}
                 selectedPaymentMethod={selectedPaymentMethod}
-                cartState={cartState}
+                cartState={items}
                 sellerNotes={sellerNotes}
                 onSellerNotesChange={setSellerNotes}
+                agreementAccepted={agreementAccepted}
+                setAgreementAccepted={setAgreementAccepted}
               />
             )}
 
@@ -319,16 +504,177 @@ export default function CheckoutForm() {
 
           {/* Order Summary Sidebar */}
           <div className="lg:col-span-1">
-            <OrderSummary cartState={cartState} />
+            <OrderSummary
+              cartState={items}
+              expressCheckout={expressCheckout}
+              expressProductData={expressProductData}
+              expressQuantity={expressQuantity}
+              couponCode={couponCode}
+              setCouponCode={setCouponCode}
+              appliedCoupon={appliedCoupon}
+              couponLoading={couponLoading}
+              couponError={couponError}
+              handleApplyCoupon={handleApplyCoupon}
+              handleRemoveCoupon={handleRemoveCoupon}
+              getExpressTotal={getExpressTotal}
+              checkStockAvailability={checkStockAvailability}
+              getTotal={getTotal}
+            />
           </div>
         </div>
       </form>
+
+      <Modal
+        isOpen={showAddressModal}
+        onClose={() => {
+          setShowAddressModal(false);
+          setAddressForm({}); // Modal kapandığında form'u temizle
+        }}
+        title="Yeni Adres Ekle"
+      >
+        <form onSubmit={handleAddAddress} className="space-y-4">
+          <input
+            type="text"
+            placeholder="Ad Soyad"
+            className="w-full border p-2 rounded"
+            value={addressForm.full_name || ""}
+            onChange={(e) =>
+              setAddressForm((f) => ({ ...f, full_name: e.target.value }))
+            }
+            required
+          />
+          <input
+            type="tel"
+            placeholder="Telefon"
+            className="w-full border p-2 rounded"
+            value={addressForm.phone || ""}
+            onChange={(e) =>
+              setAddressForm((f) => ({ ...f, phone: e.target.value }))
+            }
+            required
+          />
+          <input
+            type="text"
+            placeholder="Şehir"
+            className="w-full border p-2 rounded"
+            value={addressForm.city || ""}
+            onChange={(e) =>
+              setAddressForm((f) => ({ ...f, city: e.target.value }))
+            }
+            required
+          />
+          <input
+            type="text"
+            placeholder="İlçe"
+            className="w-full border p-2 rounded"
+            value={addressForm.district || ""}
+            onChange={(e) =>
+              setAddressForm((f) => ({ ...f, district: e.target.value }))
+            }
+            required
+          />
+          <textarea
+            placeholder="Adres"
+            className="w-full border p-2 rounded"
+            value={addressForm.address_line || ""}
+            onChange={(e) =>
+              setAddressForm((f) => ({ ...f, address_line: e.target.value }))
+            }
+            required
+            rows={3}
+          />
+          <input
+            type="text"
+            placeholder="Posta Kodu"
+            className="w-full border p-2 rounded"
+            value={addressForm.postal_code || ""}
+            onChange={(e) =>
+              setAddressForm((f) => ({ ...f, postal_code: e.target.value }))
+            }
+          />
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white py-2 rounded"
+          >
+            Kaydet
+          </button>
+        </form>
+      </Modal>
+      <Modal
+        isOpen={showCardModal}
+        onClose={() => setShowCardModal(false)}
+        title="Yeni Kart Ekle"
+      >
+        <form onSubmit={handleAddCard} className="space-y-4">
+          <input
+            type="text"
+            placeholder="Kart Adı"
+            className="w-full border p-2 rounded"
+            value={cardForm.card_name || ""}
+            onChange={(e) =>
+              setCardForm((f) => ({ ...f, card_name: e.target.value }))
+            }
+            required
+          />
+          <input
+            type="text"
+            placeholder="Kart Numarası"
+            className="w-full border p-2 rounded"
+            value={cardForm.card_number || ""}
+            onChange={(e) =>
+              setCardForm((f) => ({ ...f, card_number: e.target.value }))
+            }
+            required
+          />
+          <input
+            type="text"
+            placeholder="Kart Sahibi"
+            className="w-full border p-2 rounded"
+            value={cardForm.card_holder_name || ""}
+            onChange={(e) =>
+              setCardForm((f) => ({ ...f, card_holder_name: e.target.value }))
+            }
+            required
+          />
+          <input
+            type="text"
+            placeholder="Ay (MM)"
+            className="w-full border p-2 rounded"
+            value={cardForm.expiry_month || ""}
+            onChange={(e) =>
+              setCardForm((f) => ({ ...f, expiry_month: e.target.value }))
+            }
+            required
+          />
+          <input
+            type="text"
+            placeholder="Yıl (YY)"
+            className="w-full border p-2 rounded"
+            value={cardForm.expiry_year || ""}
+            onChange={(e) =>
+              setCardForm((f) => ({ ...f, expiry_year: e.target.value }))
+            }
+            required
+          />
+          <button
+            type="submit"
+            className="w-full bg-blue-600 text-white py-2 rounded"
+          >
+            Kaydet
+          </button>
+        </form>
+      </Modal>
     </div>
   );
 }
 
 // Address Selection Step
-function AddressStep({ addresses, selectedAddress, onSelectAddress }) {
+function AddressStep({
+  addresses,
+  selectedAddress,
+  onSelectAddress,
+  setShowAddressModal,
+}) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
       <h2 className="text-xl font-semibold text-gray-900 mb-6">
@@ -397,7 +743,11 @@ function AddressStep({ addresses, selectedAddress, onSelectAddress }) {
             </div>
           ))}
 
-          <button className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-600 hover:text-brand-600 transition-colors">
+          <button
+            type="button"
+            onClick={() => setShowAddressModal(true)}
+            className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-600 hover:text-brand-600 transition-colors"
+          >
             <PlusIcon className="w-5 h-5 mx-auto mb-2" />
             Yeni Adres Ekle
           </button>
@@ -502,6 +852,7 @@ function PaymentStep({
   paymentMethods,
   selectedPaymentMethod,
   onSelectPaymentMethod,
+  setShowCardModal,
 }) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
@@ -571,7 +922,11 @@ function PaymentStep({
             </div>
           ))}
 
-          <button className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-600 hover:text-brand-600 transition-colors">
+          <button
+            type="button"
+            onClick={() => setShowCardModal(true)}
+            className="w-full p-4 border-2 border-dashed border-gray-300 rounded-lg text-gray-600 hover:border-brand-600 hover:text-brand-600 transition-colors"
+          >
             <PlusIcon className="w-5 h-5 mx-auto mb-2" />
             Yeni Kart Ekle
           </button>
@@ -603,11 +958,22 @@ function ConfirmationStep({
   cartState,
   sellerNotes,
   onSellerNotesChange,
+  agreementAccepted,
+  setAgreementAccepted,
 }) {
+  // Format price helper
+  const formatPrice = (price) => {
+    return new Intl.NumberFormat("tr-TR", {
+      style: "currency",
+      currency: "TRY",
+    }).format(price);
+  };
   // Group items by seller for notes
-  const sellerGroups = cartState.items.reduce((groups, item) => {
-    const sellerId = item.seller_id || "default";
-    const sellerName = item.seller_name || "ANDA Mağaza";
+  const sellerGroups = cartState.reduce((groups, item) => {
+    const sellerId = item.products?.seller_id || "default";
+    const sellerName = item.products?.seller?.business_name || "ANDA Mağaza";
+    const price = item.products?.discounted_price || item.products?.price || 0;
+
     if (!groups[sellerId]) {
       groups[sellerId] = {
         sellerId,
@@ -617,7 +983,7 @@ function ConfirmationStep({
       };
     }
     groups[sellerId].items.push(item);
-    groups[sellerId].total += item.price * item.quantity;
+    groups[sellerId].total += price * item.quantity;
     return groups;
   }, {});
 
@@ -699,35 +1065,48 @@ function ConfirmationStep({
         {/* Order Summary */}
         <div className="border-t border-gray-200 pt-4">
           <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span>Ara Toplam:</span>
-              <span>{formatPrice(cartState.subtotal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>KDV (%18):</span>
-              <span>{formatPrice(cartState.taxAmount)}</span>
-            </div>
-            {cartState.discountAmount > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>İndirim:</span>
-                <span>-{formatPrice(cartState.discountAmount)}</span>
-              </div>
-            )}
-            <div className="border-t border-gray-200 pt-2 flex justify-between font-semibold text-lg">
-              <span>Toplam:</span>
+            <div className="flex justify-between font-semibold text-lg">
+              <span>Toplam Ödenecek Ücret:</span>
               <span className="text-brand-600">
-                {formatPrice(cartState.total)}
+                {formatPrice(
+                  cartState.reduce((total, item) => {
+                    const price =
+                      item.products?.discounted_price ||
+                      item.products?.price ||
+                      0;
+                    return total + price * item.quantity;
+                  }, 0)
+                )}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-sm text-yellow-800">
-            <strong>Önemli:</strong> Siparişinizi onayladıktan sonra ödeme
-            işlemi gerçekleştirilecek. Siparişinizi iptal etmek için 24 saat
-            içinde müşteri hizmetleri ile iletişime geçin.
-          </p>
+        {/* Mesafeli Satış Sözleşmesi Onayı */}
+        <div className="border-t border-gray-200 pt-4">
+          <div className="flex items-start space-x-3">
+            <input
+              type="checkbox"
+              id="agreement"
+              checked={agreementAccepted}
+              onChange={(e) => setAgreementAccepted(e.target.checked)}
+              className="mt-1 h-4 w-4 text-brand-600 focus:ring-brand-500 border-gray-300 rounded"
+            />
+            <label htmlFor="agreement" className="text-sm text-gray-700">
+              <strong>Mesafeli Satış Sözleşmesi</strong>'ni{" "}
+              <a
+                href="/distance-sales-agreement"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-brand-600 hover:text-brand-700 underline"
+              >
+                okudum
+              </a>{" "}
+              ve kabul ediyorum. Siparişimi onayladıktan sonra ödeme işlemi
+              gerçekleştirilecek. Siparişimi iptal etmek için 24 saat içinde
+              müşteri hizmetleri ile iletişime geçebilirim.
+            </label>
+          </div>
         </div>
       </div>
     </div>
@@ -737,77 +1116,187 @@ function ConfirmationStep({
 /**
  * Order summary sidebar
  */
-function OrderSummary({ cartState }) {
+function OrderSummary({
+  cartState,
+  expressCheckout = false,
+  expressProductData = null,
+  expressQuantity = 1,
+  couponCode = "",
+  setCouponCode = () => {},
+  appliedCoupon = null,
+  couponLoading = false,
+  couponError = "",
+  handleApplyCoupon = () => {},
+  handleRemoveCoupon = () => {},
+  getExpressTotal = () => 0,
+  checkStockAvailability = () => true,
+  getTotal = () => 0,
+}) {
+  const isStockAvailable = checkStockAvailability();
+  const total = expressCheckout ? getExpressTotal() : getTotal();
+
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 sticky top-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">
-        Sipariş Özeti
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+      <h2 className="text-xl font-semibold text-gray-900 mb-6">
+        {expressCheckout ? "Hızlı Satın Alma Özeti" : "Sepet Özeti"}
       </h2>
 
-      {/* Cart Items */}
-      <div className="space-y-3 mb-4 max-h-64 overflow-y-auto">
-        {cartState.items.map((item) => (
-          <div key={item.id} className="flex items-center gap-3">
+      {/* Express Checkout Ürün */}
+      {expressCheckout && expressProductData && (
+        <div className="border-b border-gray-200 pb-4 mb-4">
+          <div className="flex items-center space-x-4">
             <img
-              src={item.image || "/placeholder-product.jpg"}
-              alt={item.name}
-              className="w-12 h-12 object-cover rounded-lg"
+              src={
+                (Array.isArray(expressProductData.images) &&
+                  expressProductData.images.length > 0 &&
+                  expressProductData.images[0]) ||
+                expressProductData.image_url ||
+                "/placeholder-product.jpg"
+              }
+              alt={expressProductData.name}
+              className="w-16 h-16 object-cover rounded-md"
             />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">
-                {item.name}
+            <div className="flex-1">
+              <h3 className="font-medium text-gray-900">
+                {expressProductData.name}
+              </h3>
+              <p className="text-sm text-gray-600">
+                {expressProductData.seller?.business_name}
               </p>
-              <p className="text-sm text-gray-500">
-                {item.quantity} x {formatPrice(item.price)}
-              </p>
-              {item.seller && (
-                <p className="text-xs text-gray-400">{item.seller}</p>
-              )}
+              <p className="text-sm text-gray-500">Adet: {expressQuantity}</p>
             </div>
-            <div className="text-sm font-medium text-gray-900">
-              {formatPrice(item.price * item.quantity)}
+            <div className="text-right">
+              <p className="font-medium text-gray-900">
+                ₺
+                {(
+                  (expressProductData.discounted_price ||
+                    expressProductData.price) * expressQuantity
+                ).toFixed(2)}
+              </p>
             </div>
           </div>
-        ))}
-      </div>
+        </div>
+      )}
 
-      {/* Summary */}
-      <div className="border-t border-gray-200 pt-4 space-y-2 text-sm">
-        <div className="flex justify-between">
-          <span>Ara Toplam ({cartState.itemCount} ürün):</span>
-          <span>{formatPrice(cartState.subtotal)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>KDV (%18):</span>
-          <span>{formatPrice(cartState.taxAmount)}</span>
-        </div>
-        <div className="flex justify-between">
-          <span>Kargo:</span>
-          <span>Ücretsiz</span>
-        </div>
-        {cartState.discountAmount > 0 && (
-          <div className="flex justify-between text-green-600">
-            <span>İndirim:</span>
-            <span>-{formatPrice(cartState.discountAmount)}</span>
+      {/* Normal Cart Items */}
+      {!expressCheckout && (
+        <div className="border-b border-gray-200 pb-4 mb-4">
+          <h3 className="font-medium text-gray-900 mb-3">Ürünler</h3>
+          <div className="space-y-3">
+            {cartState.map((item) => {
+              const product = item.products;
+              const price = product?.discounted_price || product?.price || 0;
+
+              return (
+                <div key={item.id} className="flex items-center space-x-3">
+                  <img
+                    src={
+                      (Array.isArray(product?.images) &&
+                        product.images.length > 0 &&
+                        product.images[0]) ||
+                      product?.image_url ||
+                      "/placeholder-product.jpg"
+                    }
+                    alt={product?.name}
+                    className="w-12 h-12 object-cover rounded-md"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-medium text-gray-900 truncate">
+                      {product?.name}
+                    </h4>
+                    <p className="text-sm text-gray-600">
+                      {product?.seller?.business_name}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Adet: {item.quantity}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-medium text-gray-900">
+                      ₺{(price * item.quantity).toFixed(2)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        )}
-        <div className="border-t border-gray-200 pt-2 flex justify-between font-semibold text-lg">
-          <span>Toplam:</span>
-          <span className="text-brand-600">{formatPrice(cartState.total)}</span>
+        </div>
+      )}
+
+      {/* Kupon Sistemi */}
+      <div className="border-b border-gray-200 pb-4 mb-4">
+        <h3 className="font-medium text-gray-900 mb-3">Kupon Kodu</h3>
+        <div className="space-y-2">
+          {!appliedCoupon ? (
+            <div className="flex space-x-2">
+              <input
+                type="text"
+                value={couponCode}
+                onChange={(e) => setCouponCode(e.target.value)}
+                placeholder="Kupon kodunuzu girin"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+              <button
+                onClick={handleApplyCoupon}
+                disabled={couponLoading || !couponCode.trim()}
+                className="px-4 py-2 bg-orange-500 text-white rounded-md hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {couponLoading ? "..." : "Uygula"}
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between p-3 bg-green-50 border border-green-200 rounded-md">
+              <div>
+                <p className="text-sm font-medium text-green-900">
+                  Kupon Uygulandı: {appliedCoupon.code}
+                </p>
+                <p className="text-sm text-green-700">
+                  {appliedCoupon.discount_type === "percentage"
+                    ? `%${appliedCoupon.discount_value} indirim`
+                    : `₺${appliedCoupon.discount_value} indirim`}
+                </p>
+              </div>
+              <button
+                onClick={handleRemoveCoupon}
+                className="text-green-600 hover:text-green-800 text-sm"
+              >
+                Kaldır
+              </button>
+            </div>
+          )}
+          {couponError && <p className="text-sm text-red-600">{couponError}</p>}
         </div>
       </div>
 
-      {/* Security Badge */}
-      <div className="mt-4 p-3 bg-green-50 rounded-lg">
-        <div className="flex items-center gap-2">
-          <CheckCircleIcon className="w-4 h-4 text-green-600" />
-          <span className="text-sm font-medium text-green-900">
-            Güvenli Ödeme
-          </span>
+      {/* Stok Kontrolü */}
+      {!isStockAvailable && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+          <p className="text-sm text-red-800">
+            ⚠️ Bazı ürünler stokta yok. Lütfen miktarları kontrol edin.
+          </p>
         </div>
-        <p className="text-xs text-green-700 mt-1">
-          SSL sertifikası ile korunmaktadır
-        </p>
+      )}
+
+      {/* Toplam Ödenecek Ücret */}
+      <div className="border-t border-gray-200 pt-4">
+        <div className="flex justify-between text-xl font-bold text-orange-600">
+          <span>Toplam Ödenecek Ücret:</span>
+          <span>₺{total.toFixed(2)}</span>
+        </div>
+      </div>
+
+      {/* Güvenlik Bilgisi */}
+      <div className="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg">
+        <div className="flex items-center space-x-2 mb-2">
+          <CheckCircleIcon className="w-5 h-5 text-green-600" />
+          <h4 className="font-medium text-green-900">Güvenli Ödeme</h4>
+        </div>
+        <ul className="mt-2 text-sm text-green-800 space-y-1">
+          <li>• Tüm ödemeler SSL ile şifrelenir</li>
+          <li>• Kart bilgileriniz güvenle saklanır</li>
+          <li>• 3D Secure ile onaylanır</li>
+          <li>• Tek tıkla ödeme imkanı</li>
+        </ul>
       </div>
     </div>
   );

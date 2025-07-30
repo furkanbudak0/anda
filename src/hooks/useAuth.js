@@ -1,8 +1,6 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   login as apiLogin,
-  logout as apiLogout,
-  getCurrentUser,
   userSignup as apiUserSignup,
   sellerSignup as apiSellerSignup,
   updateCurrentUser as apiUpdateUser,
@@ -153,7 +151,15 @@ export function useSellerSignup() {
   const navigate = useNavigate();
 
   return useMutation({
-    mutationFn: apiSellerSignup,
+    mutationFn: ({ fullName, companyName, taxId, phone, email, password }) =>
+      apiSellerSignup({
+        fullName,
+        companyName,
+        taxId,
+        phone,
+        email,
+        password,
+      }),
     onSuccess: () => {
       // Don't set user data since seller accounts need approval
       navigate("/seller/application-submitted", { replace: true });

@@ -2,6 +2,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../services/supabase";
 import { toast } from "react-hot-toast";
 
+// Adres türleri
+export const ADDRESS_TYPES = {
+  HOME: "home",
+  WORK: "work",
+  OTHER: "other",
+};
+
+export const ADDRESS_TYPE_LABELS = {
+  [ADDRESS_TYPES.HOME]: "Ev Adresi",
+  [ADDRESS_TYPES.WORK]: "İş Adresi",
+  [ADDRESS_TYPES.OTHER]: "Diğer",
+};
+
 // Get user addresses
 export function useAddresses() {
   return useQuery({
@@ -20,7 +33,7 @@ export function useAddresses() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      return data;
+      return data || [];
     },
   });
 }
@@ -31,12 +44,13 @@ export function useAddAddress() {
 
   return useMutation({
     mutationFn: async (addressData) => {
+      // Önce kullanıcı bilgisini al
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Kullanıcı girişi yapılmamış");
 
-      // If this is set as default, unset other defaults first
+      // Eğer varsayılan olarak ayarlanıyorsa, diğer adresleri varsayılan olmaktan çıkar
       if (addressData.is_default) {
         await supabase
           .from("addresses")
@@ -44,12 +58,23 @@ export function useAddAddress() {
           .eq("user_id", user.id);
       }
 
+      // Veritabanı sütunlarıyla uyumlu hale getir
+      const addressToInsert = {
+        title: addressData.full_name, // Ad soyadı title olarak kullan
+        full_name: addressData.full_name,
+        phone: addressData.phone,
+        city: addressData.city,
+        district: addressData.district || "Genel",
+        address_line: addressData.address_line,
+        postal_code: addressData.postal_code,
+        is_default: addressData.is_default || false,
+        user_id: user.id,
+      };
+
+      // Yeni adresi ekle
       const { data, error } = await supabase
         .from("addresses")
-        .insert({
-          ...addressData,
-          user_id: user.id,
-        })
+        .insert(addressToInsert)
         .select()
         .single();
 
@@ -77,7 +102,7 @@ export function useUpdateAddress() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Kullanıcı girişi yapılmamış");
 
-      // If this is set as default, unset other defaults first
+      // Eğer varsayılan olarak ayarlanıyorsa, diğer adresleri varsayılan olmaktan çıkar
       if (addressData.is_default) {
         await supabase
           .from("addresses")
@@ -125,6 +150,7 @@ export function useDeleteAddress() {
         .eq("user_id", user.id);
 
       if (error) throw error;
+      return true;
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["addresses"]);
@@ -147,13 +173,13 @@ export function useSetDefaultAddress() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Kullanıcı girişi yapılmamış");
 
-      // First, unset all defaults
+      // Tüm adresleri varsayılan olmaktan çıkar
       await supabase
         .from("addresses")
         .update({ is_default: false })
         .eq("user_id", user.id);
 
-      // Then set the selected one as default
+      // Belirtilen adresi varsayılan yap
       const { error } = await supabase
         .from("addresses")
         .update({ is_default: true })
@@ -161,6 +187,7 @@ export function useSetDefaultAddress() {
         .eq("user_id", user.id);
 
       if (error) throw error;
+      return true;
     },
     onSuccess: () => {
       queryClient.invalidateQueries(["addresses"]);
@@ -172,4 +199,23 @@ export function useSetDefaultAddress() {
       );
     },
   });
+}
+
+// Utility function to get default address
+export function getDefaultAddress(addresses) {
+  if (!Array.isArray(addresses) || addresses.length === 0) return null;
+
+  const defaultAddr = addresses.find((addr) => addr.is_default);
+  return defaultAddr || addresses[0];
+}
+
+// Utility function to format address for display
+export function formatAddress(address) {
+  if (!address) return "";
+
+  const parts = [address.address_line || address.address, address.city].filter(
+    Boolean
+  );
+
+  return parts.join(", ");
 }
